@@ -1,0 +1,5 @@
+@import 'tailwindcss';
+
+:root { --forest: #17372d; --green: #0a6b48; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f5f7f3; color: var(--forest); font-family: Arial, sans-serif; }
