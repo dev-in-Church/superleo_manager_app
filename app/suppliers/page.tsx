@@ -11,6 +11,7 @@ type Supplier = {
   email: string;
   phone?: string;
   address?: string;
+  is_active?: boolean;
 };
 type Delivery = {
   id: string;
@@ -74,12 +75,33 @@ function CheckIcon() {
   );
 }
 
+function AlertIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className="size-5 shrink-0"
+      aria-hidden
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 6a1 1 0 112 0v4a1 1 0 11-2 0V6zm1 8a1 1 0 100-2 1 1 0 000 2z"
+      />
+    </svg>
+  );
+}
+
+type StatusFilter = "all" | "active" | "inactive";
+
 export default function SuppliersPage() {
   const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [notice, setNotice] = useState("");
+  const [noticeError, setNoticeError] = useState(false);
+  const [filter, setFilter] = useState<StatusFilter>("all");
   const [menuOpen, setMenuOpen] = useState(false);
   const token =
     typeof window !== "undefined"
@@ -87,7 +109,7 @@ export default function SuppliersPage() {
       : null;
   useEffect(() => {
     if (!token) return router.replace("/");
-    request<{ data: Supplier[] }>("/admin/suppliers", token)
+    request<{ data: Supplier[] }>("/admin/suppliers?include=all", token)
       .then(({ data }) => setSuppliers(data))
       .catch(() => router.replace("/"));
   }, [router, token]);
@@ -124,20 +146,70 @@ export default function SuppliersPage() {
           : item,
       ),
     );
-    setNotice("Supplier profile updated.");
+    notify("Supplier profile updated.");
     setEditing(null);
   }
-  async function deleteSupplier(id: string) {
-    if (!token || !confirm("Deactivate this supplier profile?")) return;
-    await request(`/admin/suppliers/${id}`, token, { method: "DELETE" });
-    setSuppliers((items) => items.filter((item) => item.id !== id));
-    setNotice("Supplier profile deactivated.");
+  async function toggleSupplier(supplier: Supplier) {
+    if (!token) return;
+    const active = supplier.is_active !== false;
+    const message = active
+      ? `Deactivate ${supplier.full_name}? They will not be able to log in and will be hidden from new milk records. Their existing records are kept.`
+      : `Activate ${supplier.full_name}? They will be able to log in again.`;
+    if (!confirm(message)) return;
+    try {
+      await request(`/admin/suppliers/${supplier.id}/status`, token, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: !active }),
+      });
+      setSuppliers((items) =>
+        items.map((item) =>
+          item.id === supplier.id ? { ...item, is_active: !active } : item,
+        ),
+      );
+      notify(
+        active
+          ? `${supplier.full_name} deactivated.`
+          : `${supplier.full_name} activated.`,
+      );
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Could not update supplier",
+        true,
+      );
+    }
+  }
+  async function deleteSupplier(supplier: Supplier) {
+    if (!token) return;
+    const typed = prompt(
+      `This permanently deletes ${supplier.full_name} and all their milk records. This cannot be undone.\n\nType ${supplier.supplier_code} to confirm.`,
+    );
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== supplier.supplier_code.toUpperCase()) {
+      notify("Supplier code did not match. Nothing was deleted.", true);
+      return;
+    }
+    try {
+      await request(`/admin/suppliers/${supplier.id}?permanent=true`, token, {
+        method: "DELETE",
+      });
+      setSuppliers((items) => items.filter((item) => item.id !== supplier.id));
+      if (editing?.id === supplier.id) {
+        setEditing(null);
+        setDeliveries([]);
+      }
+      notify(`${supplier.full_name} was permanently deleted.`);
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Could not delete supplier",
+        true,
+      );
+    }
   }
   async function deleteDelivery(id: string) {
     if (!token || !confirm("Delete this milk record permanently?")) return;
     await request(`/deliveries/${id}`, token, { method: "DELETE" });
     setDeliveries((items) => items.filter((item) => item.id !== id));
-    setNotice("Milk record deleted.");
+    notify("Milk record deleted.");
   }
   async function editDelivery(delivery: Delivery) {
     if (!token) return;
@@ -157,8 +229,23 @@ export default function SuppliersPage() {
           : item,
       ),
     );
-    setNotice("Milk record updated.");
+    notify("Milk record updated.");
   }
+  function notify(text: string, error = false) {
+    setNotice(text);
+    setNoticeError(error);
+  }
+  const activeCount = suppliers.filter(
+    (item) => item.is_active !== false,
+  ).length;
+  const inactiveCount = suppliers.length - activeCount;
+  const visible = suppliers.filter((item) =>
+    filter === "all"
+      ? true
+      : filter === "active"
+        ? item.is_active !== false
+        : item.is_active === false,
+  );
   function logout() {
     localStorage.removeItem("superleo_manager_token");
     router.replace("/");
@@ -285,16 +372,20 @@ export default function SuppliersPage() {
             </p>
           </div>
           <div className="rounded-xl bg-[#dceccd] px-4 py-3 text-sm font-bold text-[#285b38]">
-            {suppliers.length} active suppliers
+            {activeCount} active suppliers
           </div>
         </div>
 
         {notice && (
           <div
             role="status"
-            className="mt-6 flex items-start gap-3 rounded-2xl border border-[#c8dfbd] bg-[#edf7e9] px-4 py-3.5 text-sm font-semibold text-[#285b38] sm:px-5"
+            className={`mt-6 flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm font-semibold sm:px-5 ${
+              noticeError
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-[#c8dfbd] bg-[#edf7e9] text-[#285b38]"
+            }`}
           >
-            <CheckIcon />
+            {noticeError ? <AlertIcon /> : <CheckIcon />}
             <span className="min-w-0 break-words">{notice}</span>
           </div>
         )}
@@ -305,23 +396,57 @@ export default function SuppliersPage() {
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-bold">Supplier profiles</h2>
               <span className="rounded-full bg-[#eef6eb] px-3 py-1 text-xs font-bold text-[#3e7c48]">
-                {suppliers.length}
+                {visible.length}
               </span>
             </div>
+
+            <div
+              role="group"
+              aria-label="Filter suppliers"
+              className="mt-4 inline-flex rounded-xl bg-[#eef5e8] p-1"
+            >
+              {(
+                [
+                  { id: "all", label: `All (${suppliers.length})` },
+                  { id: "active", label: `Active (${activeCount})` },
+                  { id: "inactive", label: `Inactive (${inactiveCount})` },
+                ] as { id: StatusFilter; label: string }[]
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={filter === tab.id}
+                  onClick={() => setFilter(tab.id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition sm:text-sm ${
+                    filter === tab.id
+                      ? "bg-white text-[#0a6b48] shadow-sm"
+                      : "text-[#64766b] hover:text-[#0a6b48]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             <div className="mt-5 flex flex-col gap-3">
-              {suppliers.map((supplier) => {
+              {visible.map((supplier) => {
                 const selected = editing?.id === supplier.id;
+                const active = supplier.is_active !== false;
                 return (
                   <div
                     key={supplier.id}
                     className={`rounded-2xl border p-4 transition ${
                       selected
                         ? "border-[#5a9960] bg-[#f2f8ee]"
-                        : "border-[#e3ece2] hover:border-[#c8dfbd]"
+                        : active
+                          ? "border-[#e3ece2] hover:border-[#c8dfbd]"
+                          : "border-[#e3ece2] bg-[#fafaf8]"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={`flex min-w-0 items-center gap-3 ${active ? "" : "opacity-60"}`}
+                      >
                         <span
                           aria-hidden
                           className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#dceccd] text-sm font-bold uppercase text-[#0a6b48]"
@@ -340,15 +465,17 @@ export default function SuppliersPage() {
                           </p>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => deleteSupplier(supplier.id)}
-                        className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-red-700 transition hover:bg-red-50 ${focusRing}`}
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
+                          active
+                            ? "bg-[#eef6eb] text-[#3e7c48]"
+                            : "bg-red-50 text-red-700"
+                        }`}
                       >
-                        Deactivate
-                      </button>
+                        {active ? "Active" : "Inactive"}
+                      </span>
                     </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => showRecords(supplier)}
@@ -363,13 +490,39 @@ export default function SuppliersPage() {
                       >
                         Edit profile
                       </button>
+                      <span
+                        aria-hidden
+                        className="mx-1 hidden h-5 w-px bg-[#e3ece2] sm:block"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleSupplier(supplier)}
+                        className={`rounded-lg px-2.5 py-2 text-sm font-bold transition ${focusRing} ${
+                          active
+                            ? "text-[#9a7440] hover:bg-[#f4eee2]"
+                            : "text-[#0a6b48] hover:bg-[#eef5e8]"
+                        }`}
+                      >
+                        {active ? "Deactivate" : "Activate"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSupplier(supplier)}
+                        className={`rounded-lg px-2.5 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50 ${focusRing}`}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 );
               })}
-              {!suppliers.length && (
+              {!visible.length && (
                 <p className="rounded-2xl border border-dashed border-[#c8d8cb] py-10 text-center text-sm text-[#71847a]">
-                  No active suppliers yet.
+                  {filter === "inactive"
+                    ? "No inactive suppliers."
+                    : filter === "active"
+                      ? "No active suppliers yet."
+                      : "No suppliers yet."}
                 </p>
               )}
             </div>
