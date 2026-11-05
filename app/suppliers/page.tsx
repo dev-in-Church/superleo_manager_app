@@ -1,668 +1,562 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Card, Input } from "../../components/ui";
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
-type Supplier = {
-  id: string;
-  supplier_code: string;
-  full_name: string;
-  email: string;
-  phone?: string;
-  address?: string;
-  is_active?: boolean;
-};
-type Delivery = {
-  id: string;
-  quantity_litres: number;
-  session_date: string;
-  session_type: string;
-  full_name: string;
-  supplier_code: string;
-};
-function formatDate(value: string) {
-  const text = String(value || "");
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text)
-    ? new Date(`${text}T00:00:00`)
-    : new Date(text);
-  return Number.isNaN(parsed.getTime())
-    ? "Date unavailable"
-    : parsed.toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-}
-async function request<T>(
-  path: string,
-  token: string,
-  options?: RequestInit,
-): Promise<T> {
-  const response = await fetch(`${API}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(options?.headers || {}),
-    },
-  });
-  if (!response.ok)
-    throw new Error((await response.json()).error || "Request failed");
-  return response.json();
-}
+import { ManagerHeader } from "../../components/manager-header";
+import {
+  isActive,
+  litres,
+  request,
+  useDebounced,
+  useManagerToken,
+  type SupplierRow,
+} from "../../lib/manager-api";
 
-/* ---------- presentation helpers (no logic) ---------- */
-const eyebrow = "text-xs font-bold uppercase tracking-[.15em] text-[#5a9960]";
+type Status = "all" | "active" | "inactive";
+type Meta = {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+const PAGE_SIZE = 20;
+const SORTS = [
+  { id: "name_asc", label: "Name (A–Z)" },
+  { id: "records_desc", label: "Most records" },
+  { id: "records_asc", label: "Fewest records" },
+  { id: "newest", label: "Newest first" },
+];
+
 const focusRing =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48]";
-const navLink = `rounded-full px-3 py-1.5 text-sm font-bold transition ${focusRing}`;
+const field =
+  "w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-2.5 text-sm outline-none transition placeholder:text-[#9aa89f] focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20";
 
-function CheckIcon() {
+function pageList(current: number, total: number): (number | "…")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const wanted = new Set([1, total, current - 1, current, current + 1]);
+  const pages = [...wanted]
+    .filter((p) => p >= 1 && p <= total)
+    .sort((a, b) => a - b);
+  const out: (number | "…")[] = [];
+  pages.forEach((p, i) => {
+    if (i > 0 && p - pages[i - 1] > 1) out.push("…");
+    out.push(p);
+  });
+  return out;
+}
+
+function StatusBadge({ supplier }: { supplier: SupplierRow }) {
+  const active = isActive(supplier);
   return (
-    <svg
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className="size-5 shrink-0"
-      aria-hidden
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
+        active ? "bg-[#eef6eb] text-[#3e7c48]" : "bg-red-50 text-red-700"
+      }`}
     >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 10-1.4 1.4l2 2a1 1 0 001.4 0l4-4z"
-      />
-    </svg>
+      {active ? "Active" : "Inactive"}
+    </span>
   );
 }
 
-function AlertIcon() {
+function Avatar({ name }: { name: string }) {
   return (
-    <svg
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className="size-5 shrink-0"
+    <span
       aria-hidden
+      className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#dceccd] text-sm font-bold uppercase text-[#0a6b48]"
     >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 6a1 1 0 112 0v4a1 1 0 11-2 0V6zm1 8a1 1 0 100-2 1 1 0 000 2z"
-      />
-    </svg>
+      {name.charAt(0)}
+    </span>
   );
 }
-
-type StatusFilter = "all" | "active" | "inactive";
 
 export default function SuppliersPage() {
   const router = useRouter();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [editing, setEditing] = useState<Supplier | null>(null);
-  const [notice, setNotice] = useState("");
-  const [noticeError, setNoticeError] = useState(false);
-  const [filter, setFilter] = useState<StatusFilter>("all");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("superleo_manager_token")
-      : null;
+  const token = useManagerToken();
+
+  const [searchInput, setSearchInput] = useState("");
+  const [addressInput, setAddressInput] = useState("");
+  const search = useDebounced(searchInput, 300);
+  const address = useDebounced(addressInput, 300);
+  const [status, setStatus] = useState<Status>("all");
+  const [sort, setSort] = useState("name_asc");
+  const [page, setPage] = useState(1);
+
+  const [rows, setRows] = useState<SupplierRow[]>([]);
+  const [meta, setMeta] = useState<Meta>({
+    total: 0,
+    page: 1,
+    pageSize: PAGE_SIZE,
+    totalPages: 1,
+  });
+  const [addresses, setAddresses] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const latest = useRef(0);
+
   useEffect(() => {
-    if (!token) return router.replace("/");
-    request<{ data: Supplier[] }>("/admin/suppliers?include=all", token)
-      .then(({ data }) => setSuppliers(data))
-      .catch(() => router.replace("/"));
-  }, [router, token]);
-  async function showRecords(supplier: Supplier) {
+    if (token === null) router.replace("/");
+  }, [token, router]);
+
+  // Address suggestions (once)
+  useEffect(() => {
     if (!token) return;
-    const response = await request<{ data: Delivery[] }>(
-      `/deliveries?supplierId=${supplier.id}`,
+    request<{ data: string[] }>("/admin/suppliers/addresses", token)
+      .then(({ data }) => setAddresses(data))
+      .catch(() => {});
+  }, [token]);
+
+  // The list
+  useEffect(() => {
+    if (!token) return;
+    const id = ++latest.current;
+    setLoading(true);
+    setError("");
+    const params = new URLSearchParams({
+      search,
+      address,
+      status,
+      sort,
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+    });
+    request<{ data: SupplierRow[]; meta: Meta }>(
+      `/admin/suppliers/directory?${params}`,
       token,
-    );
-    setDeliveries(response.data);
-    setEditing(supplier);
-  }
-  async function saveSupplier(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!token || !editing) return;
-    const form = new FormData(event.currentTarget);
-    await request(`/admin/suppliers/${editing.id}`, token, {
-      method: "PATCH",
-      body: JSON.stringify({
-        fullName: form.get("fullName"),
-        phone: form.get("phone"),
-        address: form.get("address"),
-      }),
-    });
-    setSuppliers((items) =>
-      items.map((item) =>
-        item.id === editing.id
-          ? {
-              ...item,
-              full_name: String(form.get("fullName")),
-              phone: String(form.get("phone")),
-              address: String(form.get("address")),
-            }
-          : item,
-      ),
-    );
-    notify("Supplier profile updated.");
-    setEditing(null);
-  }
-  async function toggleSupplier(supplier: Supplier) {
-    if (!token) return;
-    const active = supplier.is_active !== false;
-    const message = active
-      ? `Deactivate ${supplier.full_name}? They will not be able to log in and will be hidden from new milk records. Their existing records are kept.`
-      : `Activate ${supplier.full_name}? They will be able to log in again.`;
-    if (!confirm(message)) return;
-    try {
-      await request(`/admin/suppliers/${supplier.id}/status`, token, {
-        method: "PATCH",
-        body: JSON.stringify({ isActive: !active }),
+    )
+      .then((response) => {
+        if (id !== latest.current) return; // a newer request replaced this one
+        setRows(response.data);
+        setMeta(response.meta);
+        // The page no longer exists (for example after a delete elsewhere)
+        if (response.meta.page > response.meta.totalPages)
+          setPage(response.meta.totalPages);
+      })
+      .catch((e) => {
+        if (id !== latest.current) return;
+        setError(e instanceof Error ? e.message : "Could not load suppliers");
+      })
+      .finally(() => {
+        if (id === latest.current) setLoading(false);
       });
-      setSuppliers((items) =>
-        items.map((item) =>
-          item.id === supplier.id ? { ...item, is_active: !active } : item,
-        ),
-      );
-      notify(
-        active
-          ? `${supplier.full_name} deactivated.`
-          : `${supplier.full_name} activated.`,
-      );
-    } catch (error) {
-      notify(
-        error instanceof Error ? error.message : "Could not update supplier",
-        true,
-      );
-    }
-  }
-  async function deleteSupplier(supplier: Supplier) {
-    if (!token) return;
-    const typed = prompt(
-      `This permanently deletes ${supplier.full_name} and all their milk records. This cannot be undone.\n\nType ${supplier.supplier_code} to confirm.`,
-    );
-    if (typed === null) return;
-    if (typed.trim().toUpperCase() !== supplier.supplier_code.toUpperCase()) {
-      notify("Supplier code did not match. Nothing was deleted.", true);
-      return;
-    }
-    try {
-      await request(`/admin/suppliers/${supplier.id}?permanent=true`, token, {
-        method: "DELETE",
-      });
-      setSuppliers((items) => items.filter((item) => item.id !== supplier.id));
-      if (editing?.id === supplier.id) {
-        setEditing(null);
-        setDeliveries([]);
-      }
-      notify(`${supplier.full_name} was permanently deleted.`);
-    } catch (error) {
-      notify(
-        error instanceof Error ? error.message : "Could not delete supplier",
-        true,
-      );
-    }
-  }
-  async function deleteDelivery(id: string) {
-    if (!token || !confirm("Delete this milk record permanently?")) return;
-    await request(`/deliveries/${id}`, token, { method: "DELETE" });
-    setDeliveries((items) => items.filter((item) => item.id !== id));
-    notify("Milk record deleted.");
-  }
-  async function editDelivery(delivery: Delivery) {
-    if (!token) return;
-    const quantity = prompt(
-      "Quantity in litres",
-      String(delivery.quantity_litres),
-    );
-    if (!quantity) return;
-    await request(`/deliveries/${delivery.id}`, token, {
-      method: "PATCH",
-      body: JSON.stringify({ quantityLitres: Number(quantity) }),
-    });
-    setDeliveries((items) =>
-      items.map((item) =>
-        item.id === delivery.id
-          ? { ...item, quantity_litres: Number(quantity) }
-          : item,
-      ),
-    );
-    notify("Milk record updated.");
-  }
-  function notify(text: string, error = false) {
-    setNotice(text);
-    setNoticeError(error);
-  }
-  const activeCount = suppliers.filter(
-    (item) => item.is_active !== false,
-  ).length;
-  const inactiveCount = suppliers.length - activeCount;
-  const visible = suppliers.filter((item) =>
-    filter === "all"
-      ? true
-      : filter === "active"
-        ? item.is_active !== false
-        : item.is_active === false,
+  }, [token, search, address, status, sort, page, reloadKey]);
+
+  const filtersActive = Boolean(
+    searchInput || addressInput || status !== "all",
   );
-  function logout() {
-    localStorage.removeItem("superleo_manager_token");
-    router.replace("/");
+  function clearFilters() {
+    setSearchInput("");
+    setAddressInput("");
+    setStatus("all");
+    setPage(1);
   }
+
+  const first = meta.total ? (meta.page - 1) * meta.pageSize + 1 : 0;
+  const last = Math.min(meta.total, meta.page * meta.pageSize);
+
+  if (token === undefined || token === null)
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f4f7f2] px-4 text-sm font-semibold text-[#17372d]">
+        Checking access...
+      </main>
+    );
+
   return (
     <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-      <header className="sticky top-0 z-20 border-b border-[#dce6dd] bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 md:h-20 md:px-12">
-          <a
-            href="/dashboard"
-            aria-label="SuperLeo manager home"
-            className={`flex min-w-0 items-center gap-3 rounded-lg ${focusRing}`}
-          >
-            {/* logo.png lives in your app's /public folder */}
-            <img
-              src="/logo.png"
-              alt="SuperLeo"
-              className="h-8 w-auto shrink-0 sm:h-10"
-            />
-            <span className="hidden rounded-full bg-[#dceccd] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#285b38] sm:inline">
-              Directory
-            </span>
-          </a>
-
-          {/* Desktop navigation */}
-          <div className="hidden items-center gap-3 md:flex">
-            <nav aria-label="Main" className="flex items-center gap-1">
-              <a
-                href="/dashboard"
-                className={`${navLink} text-[#64766b] hover:bg-[#eef5e8] hover:text-[#0a6b48]`}
-              >
-                Overview
-              </a>
-              <a
-                href="/suppliers"
-                aria-current="page"
-                className={`${navLink} bg-[#dceccd] text-[#0a6b48]`}
-              >
-                Suppliers
-              </a>
-            </nav>
-            <button
-              type="button"
-              onClick={logout}
-              className={`rounded-full border border-[#c8d8cb] px-4 py-1.5 text-sm font-bold text-[#17372d] transition hover:bg-[#17372d] hover:text-white ${focusRing}`}
-            >
-              Log out
-            </button>
-          </div>
-
-          {/* Mobile menu button */}
-          <button
-            type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Toggle menu"
-            aria-expanded={menuOpen}
-            aria-controls="manager-menu"
-            className={`-mr-2 flex size-10 items-center justify-center rounded-xl text-[#17372d] transition hover:bg-[#eef5e8] md:hidden ${focusRing}`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="size-6"
-              aria-hidden
-            >
-              {menuOpen ? (
-                <path d="M6 6l12 12M18 6L6 18" />
-              ) : (
-                <path d="M4 7h16M4 12h16M4 17h16" />
-              )}
-            </svg>
-          </button>
-        </div>
-
-        {menuOpen && (
-          <div
-            id="manager-menu"
-            className="border-t border-[#dce6dd] bg-white px-4 py-3 md:hidden"
-          >
-            <nav
-              aria-label="Mobile"
-              className="flex flex-col gap-1 text-sm font-bold"
-            >
-              <a
-                href="/dashboard"
-                className="rounded-xl px-3 py-3 text-[#17372d] hover:bg-[#f2f7f0]"
-              >
-                Overview
-              </a>
-              <a
-                href="/suppliers"
-                aria-current="page"
-                onClick={() => setMenuOpen(false)}
-                className="rounded-xl bg-[#dceccd] px-3 py-3 text-[#0a6b48]"
-              >
-                Suppliers
-              </a>
-              <button
-                type="button"
-                onClick={logout}
-                className="rounded-xl px-3 py-3 text-left text-red-700 hover:bg-red-50"
-              >
-                Log out
-              </button>
-            </nav>
-          </div>
-        )}
-      </header>
+      <ManagerHeader active="suppliers" />
 
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 md:px-12">
-        {/* Page heading */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
-            <p className={eyebrow}>Directory</p>
+            <p className="text-xs font-bold uppercase tracking-[.15em] text-[#5a9960]">
+              Directory
+            </p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
               All suppliers
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#71847a] sm:text-base">
-              Edit profiles, review delivery history, and keep your records
-              accurate.
+              Search the directory, then open a supplier to see their profile or
+              milk records.
             </p>
           </div>
           <div className="rounded-xl bg-[#dceccd] px-4 py-3 text-sm font-bold text-[#285b38]">
-            {activeCount} active suppliers
+            {meta.total} {filtersActive ? "matching" : "suppliers"}
           </div>
         </div>
 
-        {notice && (
-          <div
-            role="status"
-            className={`mt-6 flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm font-semibold sm:px-5 ${
-              noticeError
-                ? "border-red-200 bg-red-50 text-red-700"
-                : "border-[#c8dfbd] bg-[#edf7e9] text-[#285b38]"
-            }`}
-          >
-            {noticeError ? <AlertIcon /> : <CheckIcon />}
-            <span className="min-w-0 break-words">{notice}</span>
+        {/* Search, filter, sort */}
+        <div className="mt-6 rounded-2xl border border-[#dce6dd] bg-white p-4 sm:p-5">
+          <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_.8fr]">
+            <label className="relative block">
+              <span className="sr-only">Search suppliers</span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#809087]"
+                aria-hidden
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(e) => {
+                  setSearchInput(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search name, supplier code or phone"
+                className={`${field} pl-10`}
+              />
+            </label>
+
+            <label className="block">
+              <span className="sr-only">Filter by address</span>
+              <input
+                list="address-options"
+                value={addressInput}
+                onChange={(e) => {
+                  setAddressInput(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Filter by address"
+                className={field}
+              />
+              <datalist id="address-options">
+                {addresses.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </label>
+
+            <label className="block">
+              <span className="sr-only">Sort suppliers</span>
+              <select
+                value={sort}
+                onChange={(e) => {
+                  setSort(e.target.value);
+                  setPage(1);
+                }}
+                className={field}
+              >
+                {SORTS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    Sort: {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-        )}
 
-        <div className="mt-6 grid gap-5 sm:gap-6 lg:grid-cols-[1fr_1.2fr]">
-          {/* Supplier list */}
-          <Card className="min-w-0">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-bold">Supplier profiles</h2>
-              <span className="rounded-full bg-[#eef6eb] px-3 py-1 text-xs font-bold text-[#3e7c48]">
-                {visible.length}
-              </span>
-            </div>
-
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div
               role="group"
-              aria-label="Filter suppliers"
-              className="mt-4 inline-flex rounded-xl bg-[#eef5e8] p-1"
+              aria-label="Filter by status"
+              className="inline-flex rounded-xl bg-[#eef5e8] p-1"
             >
-              {(
-                [
-                  { id: "all", label: `All (${suppliers.length})` },
-                  { id: "active", label: `Active (${activeCount})` },
-                  { id: "inactive", label: `Inactive (${inactiveCount})` },
-                ] as { id: StatusFilter; label: string }[]
-              ).map((tab) => (
+              {(["all", "active", "inactive"] as Status[]).map((option) => (
                 <button
-                  key={tab.id}
+                  key={option}
                   type="button"
-                  aria-pressed={filter === tab.id}
-                  onClick={() => setFilter(tab.id)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition sm:text-sm ${
-                    filter === tab.id
+                  aria-pressed={status === option}
+                  onClick={() => {
+                    setStatus(option);
+                    setPage(1);
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold capitalize transition sm:text-sm ${
+                    status === option
                       ? "bg-white text-[#0a6b48] shadow-sm"
                       : "text-[#64766b] hover:text-[#0a6b48]"
                   }`}
                 >
-                  {tab.label}
+                  {option}
                 </button>
               ))}
             </div>
-
-            <div className="mt-5 flex flex-col gap-3">
-              {visible.map((supplier) => {
-                const selected = editing?.id === supplier.id;
-                const active = supplier.is_active !== false;
-                return (
-                  <div
-                    key={supplier.id}
-                    className={`rounded-2xl border p-4 transition ${
-                      selected
-                        ? "border-[#5a9960] bg-[#f2f8ee]"
-                        : active
-                          ? "border-[#e3ece2] hover:border-[#c8dfbd]"
-                          : "border-[#e3ece2] bg-[#fafaf8]"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div
-                        className={`flex min-w-0 items-center gap-3 ${active ? "" : "opacity-60"}`}
-                      >
-                        <span
-                          aria-hidden
-                          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#dceccd] text-sm font-bold uppercase text-[#0a6b48]"
-                        >
-                          {supplier.full_name.charAt(0)}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate font-bold">
-                            {supplier.full_name}
-                          </p>
-                          <p className="truncate text-sm text-[#71847a]">
-                            <span className="font-semibold text-[#5a9960]">
-                              {supplier.supplier_code}
-                            </span>{" "}
-                            · {supplier.email}
-                          </p>
-                        </div>
-                      </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
-                          active
-                            ? "bg-[#eef6eb] text-[#3e7c48]"
-                            : "bg-red-50 text-red-700"
-                        }`}
-                      >
-                        {active ? "Active" : "Inactive"}
-                      </span>
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => showRecords(supplier)}
-                        className={`rounded-xl bg-[#0a6b48] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#085a3d] ${focusRing}`}
-                      >
-                        View records
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditing(supplier)}
-                        className={`rounded-xl border border-[#c8d8cb] bg-white px-4 py-2 text-sm font-bold text-[#17372d] transition hover:border-[#5a9960] ${focusRing}`}
-                      >
-                        Edit profile
-                      </button>
-                      <span
-                        aria-hidden
-                        className="mx-1 hidden h-5 w-px bg-[#e3ece2] sm:block"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleSupplier(supplier)}
-                        className={`rounded-lg px-2.5 py-2 text-sm font-bold transition ${focusRing} ${
-                          active
-                            ? "text-[#9a7440] hover:bg-[#f4eee2]"
-                            : "text-[#0a6b48] hover:bg-[#eef5e8]"
-                        }`}
-                      >
-                        {active ? "Deactivate" : "Activate"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteSupplier(supplier)}
-                        className={`rounded-lg px-2.5 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50 ${focusRing}`}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {!visible.length && (
-                <p className="rounded-2xl border border-dashed border-[#c8d8cb] py-10 text-center text-sm text-[#71847a]">
-                  {filter === "inactive"
-                    ? "No inactive suppliers."
-                    : filter === "active"
-                      ? "No active suppliers yet."
-                      : "No suppliers yet."}
-                </p>
-              )}
-            </div>
-          </Card>
-
-          <div className="flex min-w-0 flex-col gap-5 sm:gap-6">
-            {/* Edit profile */}
-            <Card>
-              <p className={eyebrow}>Profile</p>
-              <h2 className="mt-2 text-xl font-bold">
-                {editing ? `Edit ${editing.full_name}` : "Select a supplier"}
-              </h2>
-              {!editing && (
-                <p className="mt-2 text-sm leading-6 text-[#71847a]">
-                  Choose a supplier from the list to edit their profile or
-                  review their milk records.
-                </p>
-              )}
-              {editing && (
-                <form
-                  key={editing.id}
-                  onSubmit={saveSupplier}
-                  className="mt-5 grid gap-4 sm:grid-cols-2"
-                >
-                  <label className="text-sm font-bold">
-                    Full name
-                    <Input
-                      name="fullName"
-                      defaultValue={editing.full_name}
-                      required
-                    />
-                  </label>
-                  <label className="text-sm font-bold">
-                    Phone
-                    <Input name="phone" defaultValue={editing.phone} />
-                  </label>
-                  <label className="text-sm font-bold sm:col-span-2">
-                    Address
-                    <Input name="address" defaultValue={editing.address} />
-                  </label>
-                  <div className="flex flex-wrap gap-3 sm:col-span-2">
-                    <Button type="submit">Save changes</Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setEditing(null)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </Card>
-
-            {/* Milk records */}
-            <Card className="min-w-0">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className={eyebrow}>Milk records</p>
-                  <h2 className="mt-2 truncate text-xl font-bold">
-                    {editing?.full_name || "Choose a supplier"}
-                  </h2>
-                </div>
-                {editing && (
-                  <span className="shrink-0 rounded-full bg-[#eef6eb] px-3 py-1 text-xs font-bold text-[#3e7c48]">
-                    {deliveries.length} records
-                  </span>
-                )}
-              </div>
-              {!editing && (
-                <p className="mt-2 text-sm leading-6 text-[#71847a]">
-                  Records appear here once you pick a supplier.
-                </p>
-              )}
-              {editing && (
-                <div className="mt-5 overflow-x-auto rounded-2xl border border-[#e3ece2]">
-                  <table className="w-full min-w-[420px] text-left text-sm">
-                    <thead className="bg-[#f4f7f2] text-xs uppercase tracking-wider text-[#71847a]">
-                      <tr>
-                        <th className="px-4 py-3 font-bold">Date</th>
-                        <th className="px-2 py-3 font-bold">Session</th>
-                        <th className="px-2 py-3 font-bold">Quantity</th>
-                        <th className="px-4 py-3 text-right font-bold">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deliveries.map((delivery) => (
-                        <tr
-                          key={delivery.id}
-                          className="border-t border-[#edf2ed] transition hover:bg-[#f9fbf8]"
-                        >
-                          <td className="whitespace-nowrap px-4 py-3">
-                            {formatDate(delivery.session_date)}
-                          </td>
-                          <td className="px-2 py-3">
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${
-                                delivery.session_type === "evening"
-                                  ? "bg-[#f4eee2] text-[#9a7440]"
-                                  : "bg-[#eef6eb] text-[#3e7c48]"
-                              }`}
-                            >
-                              {delivery.session_type}
-                            </span>
-                          </td>
-                          <td className="whitespace-nowrap px-2 py-3 font-bold">
-                            {delivery.quantity_litres} L
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => editDelivery(delivery)}
-                              className={`mr-1 rounded-lg px-2 py-1 font-bold text-[#0a6b48] transition hover:bg-[#eef5e8] ${focusRing}`}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteDelivery(delivery.id)}
-                              className={`rounded-lg px-2 py-1 font-bold text-red-700 transition hover:bg-red-50 ${focusRing}`}
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {!deliveries.length && (
-                    <p className="border-t border-[#edf2ed] py-8 text-center text-sm text-[#71847a]">
-                      No delivery records yet.
-                    </p>
-                  )}
-                </div>
-              )}
-            </Card>
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className={`rounded-lg px-3 py-1.5 text-sm font-bold text-[#0a6b48] transition hover:bg-[#eef5e8] ${focusRing}`}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3.5 text-sm font-semibold text-red-700"
+          >
+            <span className="min-w-0 break-words">{error}</span>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="rounded-lg border border-red-200 bg-white px-3 py-1.5 font-bold"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {/* List */}
+        <div className="mt-5 overflow-hidden rounded-2xl border border-[#dce6dd] bg-white">
+          {/* Desktop table */}
+          <table className="hidden w-full text-left text-sm md:table">
+            <thead className="bg-[#f4f7f2] text-xs uppercase tracking-wider text-[#71847a]">
+              <tr>
+                <th className="px-5 py-3 font-bold">Supplier</th>
+                <th className="px-3 py-3 font-bold">Contact</th>
+                <th className="px-3 py-3 font-bold">Address</th>
+                <th className="px-3 py-3 font-bold">Records</th>
+                <th className="px-3 py-3 font-bold">Status</th>
+                <th className="px-5 py-3 text-right font-bold">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody
+              className={
+                loading ? "opacity-60 transition-opacity" : "transition-opacity"
+              }
+            >
+              {rows.map((supplier) => (
+                <tr
+                  key={supplier.id}
+                  className="border-t border-[#edf2ed] transition hover:bg-[#f9fbf8]"
+                >
+                  <td className="px-5 py-3.5">
+                    <Link
+                      href={`/suppliers/${supplier.id}`}
+                      className={`flex min-w-0 items-center gap-3 rounded-lg ${focusRing}`}
+                    >
+                      <Avatar name={supplier.full_name} />
+                      <span className="min-w-0">
+                        <span
+                          className={`block truncate font-bold ${isActive(supplier) ? "" : "text-[#809087]"}`}
+                        >
+                          {supplier.full_name}
+                        </span>
+                        <span className="block text-xs font-semibold text-[#5a9960]">
+                          {supplier.supplier_code}
+                        </span>
+                      </span>
+                    </Link>
+                  </td>
+                  <td className="px-3 py-3.5">
+                    <p>
+                      {supplier.phone || (
+                        <span className="text-[#9aa89f]">No phone</span>
+                      )}
+                    </p>
+                    <p
+                      className="max-w-[200px] truncate text-xs text-[#71847a]"
+                      title={supplier.email}
+                    >
+                      {supplier.email}
+                    </p>
+                  </td>
+                  <td className="max-w-[180px] px-3 py-3.5">
+                    <p className="truncate" title={supplier.address || ""}>
+                      {supplier.address || (
+                        <span className="text-[#9aa89f]">Not added</span>
+                      )}
+                    </p>
+                  </td>
+                  <td className="px-3 py-3.5">
+                    <p className="font-bold">{supplier.records_count}</p>
+                    <p className="text-xs text-[#71847a]">
+                      {litres(supplier.total_litres)}
+                    </p>
+                  </td>
+                  <td className="px-3 py-3.5">
+                    <StatusBadge supplier={supplier} />
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                    <Link
+                      href={`/suppliers/${supplier.id}`}
+                      className={`mr-2 inline-block rounded-xl border border-[#c8d8cb] px-3.5 py-2 text-sm font-bold transition hover:border-[#5a9960] ${focusRing}`}
+                    >
+                      Profile
+                    </Link>
+                    <Link
+                      href={`/suppliers/${supplier.id}/records`}
+                      className={`inline-block rounded-xl bg-[#0a6b48] px-3.5 py-2 text-sm font-bold text-white transition hover:bg-[#085a3d] ${focusRing}`}
+                    >
+                      Records
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Mobile cards */}
+          <ul
+            className={`divide-y divide-[#edf2ed] md:hidden ${loading ? "opacity-60 transition-opacity" : "transition-opacity"}`}
+          >
+            {rows.map((supplier) => (
+              <li key={supplier.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <Link
+                    href={`/suppliers/${supplier.id}`}
+                    className={`flex min-w-0 items-center gap-3 rounded-lg ${focusRing}`}
+                  >
+                    <Avatar name={supplier.full_name} />
+                    <span className="min-w-0">
+                      <span
+                        className={`block truncate font-bold ${isActive(supplier) ? "" : "text-[#809087]"}`}
+                      >
+                        {supplier.full_name}
+                      </span>
+                      <span className="block text-xs font-semibold text-[#5a9960]">
+                        {supplier.supplier_code}
+                      </span>
+                    </span>
+                  </Link>
+                  <StatusBadge supplier={supplier} />
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div className="min-w-0">
+                    <dt className="text-xs text-[#809087]">Phone</dt>
+                    <dd className="truncate">{supplier.phone || "—"}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs text-[#809087]">Address</dt>
+                    <dd className="truncate">{supplier.address || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-[#809087]">Records</dt>
+                    <dd className="font-bold">
+                      {supplier.records_count}{" "}
+                      <span className="text-xs font-normal text-[#71847a]">
+                        · {litres(supplier.total_litres)}
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
+                <div className="mt-3 flex gap-2">
+                  <Link
+                    href={`/suppliers/${supplier.id}`}
+                    className={`flex-1 rounded-xl border border-[#c8d8cb] py-2 text-center text-sm font-bold ${focusRing}`}
+                  >
+                    Profile
+                  </Link>
+                  <Link
+                    href={`/suppliers/${supplier.id}/records`}
+                    className={`flex-1 rounded-xl bg-[#0a6b48] py-2 text-center text-sm font-bold text-white ${focusRing}`}
+                  >
+                    Records
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* First load */}
+          {loading && !rows.length && (
+            <div aria-hidden className="divide-y divide-[#edf2ed]">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex animate-pulse items-center gap-3 p-4 md:px-5"
+                >
+                  <div className="size-10 rounded-full bg-[#eef2ec]" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-40 rounded bg-[#eef2ec]" />
+                    <div className="h-3 w-24 rounded bg-[#f3f6f1]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty */}
+          {!loading && !error && !rows.length && (
+            <div className="px-4 py-14 text-center">
+              <p className="font-bold">No suppliers found</p>
+              <p className="mt-1 text-sm text-[#71847a]">
+                {filtersActive
+                  ? "Nothing matches your search or filters."
+                  : "There are no suppliers yet."}
+              </p>
+              {filtersActive && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="mt-4 rounded-xl border border-[#c8d8cb] px-4 py-2 text-sm font-bold text-[#0a6b48] hover:bg-[#f2f7f0]"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {meta.total > 0 && (
+          <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <p className="text-sm text-[#71847a]">
+              Showing{" "}
+              <strong className="text-[#17372d]">
+                {first}–{last}
+              </strong>{" "}
+              of <strong className="text-[#17372d]">{meta.total}</strong>
+            </p>
+            {meta.totalPages > 1 && (
+              <nav aria-label="Pagination" className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={meta.page <= 1}
+                  onClick={() => setPage(meta.page - 1)}
+                  className={`rounded-lg border border-[#c8d8cb] bg-white px-3 py-2 text-sm font-bold transition hover:border-[#5a9960] disabled:cursor-not-allowed disabled:opacity-40 ${focusRing}`}
+                >
+                  Previous
+                </button>
+                {pageList(meta.page, meta.totalPages).map((item, i) =>
+                  item === "…" ? (
+                    <span key={`gap-${i}`} className="px-1 text-[#809087]">
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-current={item === meta.page ? "page" : undefined}
+                      onClick={() => setPage(item)}
+                      className={`hidden min-w-9 rounded-lg px-2.5 py-2 text-sm font-bold transition sm:block ${focusRing} ${
+                        item === meta.page
+                          ? "bg-[#0a6b48] text-white"
+                          : "text-[#17372d] hover:bg-[#eef5e8]"
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ),
+                )}
+                <span className="px-2 text-sm font-semibold sm:hidden">
+                  {meta.page} / {meta.totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={meta.page >= meta.totalPages}
+                  onClick={() => setPage(meta.page + 1)}
+                  className={`rounded-lg border border-[#c8d8cb] bg-white px-3 py-2 text-sm font-bold transition hover:border-[#5a9960] disabled:cursor-not-allowed disabled:opacity-40 ${focusRing}`}
+                >
+                  Next
+                </button>
+              </nav>
+            )}
+          </div>
+        )}
       </section>
     </main>
   );

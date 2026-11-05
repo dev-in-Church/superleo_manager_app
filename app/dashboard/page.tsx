@@ -16,6 +16,8 @@ type Report = {
   from: string;
   to: string;
   totalLitres: number;
+  pricePerLitre: number;
+  totalCost: number;
   deliveryCount: number;
   supplier: { name: string; code: string; email: string } | null;
   deliveries: Array<{
@@ -144,6 +146,9 @@ export default function DashboardPage() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pricePerLitre, setPricePerLitre] = useState<number | null>(null);
+  const [priceInput, setPriceInput] = useState("");
+  const [savingPrice, setSavingPrice] = useState(false);
   const previewRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -163,6 +168,17 @@ export default function DashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [router]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("superleo_manager_token");
+    if (!token || !user) return;
+    request<{ data: { pricePerLitre: number } }>("/admin/settings/price", token)
+      .then(({ data }) => {
+        setPricePerLitre(data.pricePerLitre);
+        setPriceInput(String(data.pricePerLitre));
+      })
+      .catch(() => {});
+  }, [user]);
 
   // Presentation only: bring the preview into view once it is ready
   useEffect(() => {
@@ -277,6 +293,39 @@ export default function DashboardPage() {
     link.download = `superleo-report-${from}-${to}.pdf`;
     link.click();
     setNotice({ type: "success", text: "PDF downloaded successfully." });
+  }
+
+  async function savePrice(event: FormEvent) {
+    event.preventDefault();
+    const token = localStorage.getItem("superleo_manager_token");
+    if (!token) return;
+    const value = Number(priceInput);
+    if (priceInput.trim() === "" || !Number.isFinite(value) || value < 0) {
+      setNotice({ type: "error", text: "Enter a valid price per litre." });
+      return;
+    }
+    setSavingPrice(true);
+    try {
+      const response = await request<{ data: { pricePerLitre: number } }>(
+        "/admin/settings/price",
+        token,
+        { method: "PUT", body: JSON.stringify({ pricePerLitre: value }) },
+      );
+      setPricePerLitre(response.data.pricePerLitre);
+      setPriceInput(String(response.data.pricePerLitre));
+      setNotice({
+        type: "success",
+        text: `Price per litre set to KSh ${response.data.pricePerLitre.toFixed(2)}. New reports will use this price.`,
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text:
+          error instanceof Error ? error.message : "Could not save the price",
+      });
+    } finally {
+      setSavingPrice(false);
+    }
   }
 
   if (loading || !user)
@@ -472,6 +521,46 @@ export default function DashboardPage() {
           </div>
         )}
 
+        <form
+          onSubmit={savePrice}
+          className="mt-6 flex flex-col gap-4 rounded-2xl border border-[#cfe0d0] bg-white p-5 sm:flex-row sm:items-end sm:justify-between"
+        >
+          <div className="min-w-0">
+            <p className={eyebrow}>Pricing</p>
+            <h2 className="mt-2 text-xl font-bold">Price per litre</h2>
+            <p className="mt-1 text-sm leading-6 text-[#71847a]">
+              Used to work out the total cost in supplier reports.{" "}
+              {pricePerLitre === null
+                ? ""
+                : pricePerLitre > 0
+                  ? `Current price: KSh ${pricePerLitre.toFixed(2)} per litre.`
+                  : "No price has been set yet."}
+            </p>
+          </div>
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
+            <label className="text-sm font-semibold">
+              <span className="block">Price (KSh)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={priceInput}
+                onChange={(event) => setPriceInput(event.target.value)}
+                placeholder="e.g. 55"
+                className="mt-2 w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20 sm:w-40"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={savingPrice}
+              className="rounded-xl bg-[#0a6b48] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#085a3d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48] disabled:opacity-60"
+            >
+              {savingPrice ? "Saving..." : "Save price"}
+            </button>
+          </div>
+        </form>
+
         <div className="mt-6 grid gap-5 sm:gap-6 xl:grid-cols-[1.05fr_.95fr]">
           {/* Record a collection */}
           <Card className="min-w-0 border-[#cfe0d0]">
@@ -618,6 +707,23 @@ export default function DashboardPage() {
                       {report.totalLitres.toFixed(2)} L
                     </p>
                   </div>
+                </div>
+                <div className="mt-3 flex items-end justify-between gap-3 border-t border-white/10 pt-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-[#b7cabd]">Total cost</p>
+                    <p className="truncate text-lg font-bold">
+                      KSh{" "}
+                      {report.totalCost.toLocaleString("en-KE", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-xs text-[#b7cabd]">
+                    {report.pricePerLitre > 0
+                      ? `@ KSh ${report.pricePerLitre.toFixed(2)} / L`
+                      : "Price not set"}
+                  </p>
                 </div>
               </div>
             )}
