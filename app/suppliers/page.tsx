@@ -61,6 +61,15 @@ function StatusBadge({ supplier }: { supplier: SupplierRow }) {
   );
 }
 
+function CustomRateBadge({ supplier }: { supplier: SupplierRow }) {
+  if (!supplier.custom_price) return null;
+  return (
+    <span className="inline-flex rounded-full bg-[#fbe3b4] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#8a5a12]">
+      Custom rate
+    </span>
+  );
+}
+
 function Avatar({ name }: { name: string }) {
   return (
     <span
@@ -378,7 +387,10 @@ export default function SuppliersPage() {
                     </p>
                   </td>
                   <td className="px-3 py-3.5">
-                    <StatusBadge supplier={supplier} />
+                    <div className="flex flex-col items-start gap-1">
+                      <StatusBadge supplier={supplier} />
+                      <CustomRateBadge supplier={supplier} />
+                    </div>
                   </td>
                   <td className="whitespace-nowrap px-5 py-3.5 text-right">
                     <Link
@@ -422,7 +434,10 @@ export default function SuppliersPage() {
                       </span>
                     </span>
                   </Link>
-                  <StatusBadge supplier={supplier} />
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <StatusBadge supplier={supplier} />
+                    <CustomRateBadge supplier={supplier} />
+                  </div>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                   <div className="min-w-0">

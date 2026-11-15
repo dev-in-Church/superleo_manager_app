@@ -16,7 +16,7 @@ type Report = {
   from: string;
   to: string;
   totalLitres: number;
-  pricePerLitre: number;
+  pricePerLitre: number | null;
   totalCost: number;
   deliveryCount: number;
   supplier: { name: string; code: string; email: string } | null;
@@ -59,12 +59,7 @@ const navLink =
 
 function CheckIcon() {
   return (
-    <svg
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className="size-5 shrink-0"
-      aria-hidden
-    >
+    <svg viewBox="0 0 20 20" fill="currentColor" className="size-5 shrink-0" aria-hidden>
       <path
         fillRule="evenodd"
         clipRule="evenodd"
@@ -75,12 +70,7 @@ function CheckIcon() {
 }
 function AlertIcon() {
   return (
-    <svg
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className="size-5 shrink-0"
-      aria-hidden
-    >
+    <svg viewBox="0 0 20 20" fill="currentColor" className="size-5 shrink-0" aria-hidden>
       <path
         fillRule="evenodd"
         clipRule="evenodd"
@@ -183,10 +173,7 @@ export default function DashboardPage() {
   // Presentation only: bring the preview into view once it is ready
   useEffect(() => {
     if (pdfUrl)
-      previewRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [pdfUrl]);
 
   async function recordMilk(event: FormEvent) {
@@ -315,13 +302,12 @@ export default function DashboardPage() {
       setPriceInput(String(response.data.pricePerLitre));
       setNotice({
         type: "success",
-        text: `Price per litre set to KSh ${response.data.pricePerLitre.toFixed(2)}. New reports will use this price.`,
+        text: `Default price set to KSh ${response.data.pricePerLitre.toFixed(2)} per litre. Suppliers with a custom price are not affected.`,
       });
     } catch (error) {
       setNotice({
         type: "error",
-        text:
-          error instanceof Error ? error.message : "Could not save the price",
+        text: error instanceof Error ? error.message : "Could not save the price",
       });
     } finally {
       setSavingPrice(false);
@@ -351,11 +337,7 @@ export default function DashboardPage() {
             className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48]"
           >
             {/* put logo.png in your app's /public folder */}
-            <img
-              src="/logo.png"
-              alt="SuperLeo"
-              className="h-8 w-auto shrink-0 sm:h-10"
-            />
+            <img src="/logo.png" alt="SuperLeo" className="h-8 w-auto shrink-0 sm:h-10" />
             <span className="hidden rounded-full bg-[#dceccd] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#285b38] sm:inline">
               {user.role}
             </span>
@@ -423,10 +405,7 @@ export default function DashboardPage() {
             id="manager-menu"
             className="border-t border-[#dce6dd] bg-white px-4 py-3 md:hidden"
           >
-            <nav
-              aria-label="Mobile"
-              className="flex flex-col gap-1 text-sm font-bold"
-            >
+            <nav aria-label="Mobile" className="flex flex-col gap-1 text-sm font-bold">
               <a
                 href="/dashboard"
                 aria-current="page"
@@ -527,13 +506,13 @@ export default function DashboardPage() {
         >
           <div className="min-w-0">
             <p className={eyebrow}>Pricing</p>
-            <h2 className="mt-2 text-xl font-bold">Price per litre</h2>
+            <h2 className="mt-2 text-xl font-bold">Default price per litre</h2>
             <p className="mt-1 text-sm leading-6 text-[#71847a]">
-              Used to work out the total cost in supplier reports.{" "}
+              Applies to every supplier unless you set a custom price on their profile.{" "}
               {pricePerLitre === null
                 ? ""
                 : pricePerLitre > 0
-                  ? `Current price: KSh ${pricePerLitre.toFixed(2)} per litre.`
+                  ? `Default price: KSh ${pricePerLitre.toFixed(2)} per litre.`
                   : "No price has been set yet."}
             </p>
           </div>
@@ -547,7 +526,7 @@ export default function DashboardPage() {
                 inputMode="decimal"
                 value={priceInput}
                 onChange={(event) => setPriceInput(event.target.value)}
-                placeholder="e.g. 55"
+                placeholder="e.g. 65"
                 className="mt-2 w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20 sm:w-40"
               />
             </label>
@@ -720,9 +699,11 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <p className="shrink-0 text-xs text-[#b7cabd]">
-                    {report.pricePerLitre > 0
-                      ? `@ KSh ${report.pricePerLitre.toFixed(2)} / L`
-                      : "Price not set"}
+                    {report.pricePerLitre === null
+                      ? "Rates vary"
+                      : report.pricePerLitre > 0
+                        ? `@ KSh ${report.pricePerLitre.toFixed(2)} / L`
+                        : "Price not set"}
                   </p>
                 </div>
               </div>

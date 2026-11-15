@@ -8,6 +8,7 @@ import {
   formatDate,
   isActive,
   litres,
+  money,
   request,
   useManagerToken,
   type SupplierRow,
@@ -29,9 +30,10 @@ export default function SupplierProfilePage() {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
-    null,
-  );
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [savingPrice, setSavingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState("");
+  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
 
   useEffect(() => {
     if (token === null) router.replace("/");
@@ -42,9 +44,7 @@ export default function SupplierProfilePage() {
     setLoading(true);
     request<{ data: SupplierRow }>(`/admin/suppliers/${id}`, token)
       .then(({ data }) => setSupplier(data))
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "Could not load supplier"),
-      )
+      .catch((e) => setError(e instanceof Error ? e.message : "Could not load supplier"))
       .finally(() => setLoading(false));
   }, [token, id]);
 
@@ -76,6 +76,40 @@ export default function SupplierProfilePage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function savePrice(next: number | null) {
+    if (!token || !supplier) return;
+    setSavingPrice(true);
+    try {
+      const response = await request<{
+        data: { default_price: number; effective_price: number; custom_price: boolean };
+      }>(`/admin/suppliers/${supplier.id}/price`, token, {
+        method: "PUT",
+        body: JSON.stringify({ pricePerLitre: next }),
+      });
+      setSupplier({ ...supplier, ...response.data });
+      setEditingPrice(false);
+      notify(
+        response.data.custom_price
+          ? `Custom price set: ${money(response.data.effective_price)} per litre.`
+          : `${supplier.full_name} is on the default price of ${money(response.data.default_price)} per litre.`,
+      );
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Could not update the price", true);
+    } finally {
+      setSavingPrice(false);
+    }
+  }
+
+  function submitPrice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = Number(priceInput);
+    if (priceInput.trim() === "" || !Number.isFinite(value) || value < 0) {
+      notify("Enter a valid price per litre.", true);
+      return;
+    }
+    savePrice(value);
   }
 
   async function toggleStatus() {
@@ -113,10 +147,7 @@ export default function SupplierProfilePage() {
       });
       router.replace("/suppliers");
     } catch (e) {
-      notify(
-        e instanceof Error ? e.message : "Could not delete supplier",
-        true,
-      );
+      notify(e instanceof Error ? e.message : "Could not delete supplier", true);
     }
   }
 
@@ -195,13 +226,16 @@ export default function SupplierProfilePage() {
                 </span>
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
-                    active
-                      ? "bg-[#eef6eb] text-[#3e7c48]"
-                      : "bg-red-50 text-red-700"
+                    active ? "bg-[#eef6eb] text-[#3e7c48]" : "bg-red-50 text-red-700"
                   }`}
                 >
                   {active ? "Active" : "Inactive"}
                 </span>
+                {supplier.custom_price && (
+                  <span className="rounded-full bg-[#fbe3b4] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[#8a5a12]">
+                    Custom rate
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -241,54 +275,102 @@ export default function SupplierProfilePage() {
         <dl className="mt-4 grid grid-cols-2 gap-3 sm:gap-4">
           <div className="rounded-2xl border border-[#dce6dd] bg-white p-4 sm:p-5">
             <dt className="text-xs text-[#809087] sm:text-sm">Milk records</dt>
-            <dd className="mt-1 text-2xl font-bold">
-              {supplier.records_count}
-            </dd>
+            <dd className="mt-1 text-2xl font-bold">{supplier.records_count}</dd>
           </div>
           <div className="rounded-2xl border border-[#dce6dd] bg-white p-4 sm:p-5">
-            <dt className="text-xs text-[#809087] sm:text-sm">
-              Total supplied
-            </dt>
-            <dd className="mt-1 text-2xl font-bold">
-              {litres(supplier.total_litres)}
-            </dd>
+            <dt className="text-xs text-[#809087] sm:text-sm">Total supplied</dt>
+            <dd className="mt-1 text-2xl font-bold">{litres(supplier.total_litres)}</dd>
           </div>
         </dl>
 
-        {/* Details / edit */}
+        {/* Price per litre (managers only) */}
         <div className="mt-4 rounded-2xl border border-[#dce6dd] bg-white p-5 sm:p-6">
-          <h2 className="text-lg font-bold">
-            {editing ? "Edit profile" : "Contact details"}
-          </h2>
-          {editing ? (
-            <form
-              onSubmit={saveProfile}
-              className="mt-4 grid gap-4 sm:grid-cols-2"
-            >
-              <label className="text-sm font-bold">
-                Full name
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold">Price per litre</h2>
+              <p className="mt-1 text-sm text-[#71847a]">
+                {supplier.custom_price
+                  ? `Custom rate. The default is ${money(supplier.default_price ?? 0)} per litre.`
+                  : "Default rate, used for this supplier's reports."}
+              </p>
+            </div>
+            <p className="text-2xl font-bold">{money(supplier.effective_price ?? 0)}</p>
+          </div>
+
+          {editingPrice ? (
+            <form onSubmit={submitPrice} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="text-sm font-bold sm:w-52">
+                Price (KSh per litre)
                 <input
-                  name="fullName"
-                  defaultValue={supplier.full_name}
-                  required
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  autoFocus
+                  value={priceInput}
+                  onChange={(e) => setPriceInput(e.target.value)}
                   className={field}
                 />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={savingPrice}
+                  className={`rounded-xl bg-[#0a6b48] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#085a3d] disabled:opacity-60 ${focusRing}`}
+                >
+                  {savingPrice ? "Saving..." : "Save price"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingPrice(false)}
+                  className={`rounded-xl border border-[#c8d8cb] px-5 py-2.5 text-sm font-bold transition hover:border-[#5a9960] ${focusRing}`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPriceInput(String(supplier.effective_price ?? ""));
+                  setEditingPrice(true);
+                }}
+                className={`rounded-xl border border-[#c8d8cb] px-4 py-2.5 text-sm font-bold transition hover:border-[#5a9960] ${focusRing}`}
+              >
+                Set price
+              </button>
+              {supplier.custom_price && (
+                <button
+                  type="button"
+                  disabled={savingPrice}
+                  onClick={() => savePrice(null)}
+                  className={`rounded-xl px-4 py-2.5 text-sm font-bold text-[#0a6b48] transition hover:bg-[#eef5e8] disabled:opacity-60 ${focusRing}`}
+                >
+                  Reset to default
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Details / edit */}
+        <div className="mt-4 rounded-2xl border border-[#dce6dd] bg-white p-5 sm:p-6">
+          <h2 className="text-lg font-bold">{editing ? "Edit profile" : "Contact details"}</h2>
+          {editing ? (
+            <form onSubmit={saveProfile} className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-bold">
+                Full name
+                <input name="fullName" defaultValue={supplier.full_name} required className={field} />
               </label>
               <label className="text-sm font-bold">
                 Phone
-                <input
-                  name="phone"
-                  defaultValue={supplier.phone || ""}
-                  className={field}
-                />
+                <input name="phone" defaultValue={supplier.phone || ""} className={field} />
               </label>
               <label className="text-sm font-bold sm:col-span-2">
                 Address
-                <input
-                  name="address"
-                  defaultValue={supplier.address || ""}
-                  className={field}
-                />
+                <input name="address" defaultValue={supplier.address || ""} className={field} />
               </label>
               <div className="flex flex-wrap gap-3 sm:col-span-2">
                 <button
@@ -313,11 +395,7 @@ export default function SupplierProfilePage() {
                 <div key={item.label} className="min-w-0">
                   <dt className="text-xs text-[#809087]">{item.label}</dt>
                   <dd className="mt-0.5 break-words text-sm font-semibold">
-                    {item.value || (
-                      <span className="font-normal text-[#9aa89f]">
-                        Not added
-                      </span>
-                    )}
+                    {item.value || <span className="font-normal text-[#9aa89f]">Not added</span>}
                   </dd>
                 </div>
               ))}
@@ -330,9 +408,7 @@ export default function SupplierProfilePage() {
           <h2 className="text-lg font-bold">Account</h2>
           <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-bold">
-                {active ? "Deactivate supplier" : "Activate supplier"}
-              </p>
+              <p className="text-sm font-bold">{active ? "Deactivate supplier" : "Activate supplier"}</p>
               <p className="mt-0.5 text-sm text-[#71847a]">
                 {active
                   ? "Hides them from new milk records. Existing records are kept."
@@ -355,8 +431,7 @@ export default function SupplierProfilePage() {
             <div>
               <p className="text-sm font-bold text-red-700">Delete supplier</p>
               <p className="mt-0.5 text-sm text-[#71847a]">
-                Permanently removes the supplier and all their milk records.
-                This cannot be undone.
+                Permanently removes the supplier and all their milk records. This cannot be undone.
               </p>
             </div>
             <button

@@ -59,6 +59,10 @@ export type SupplierRow = {
   created_at?: string;
   records_count: number;
   total_litres: string | number;
+  // set by GET /admin/suppliers/:id (manager side only)
+  default_price?: number | string;
+  effective_price?: number | string;
+  custom_price?: boolean;
 };
 export type Delivery = {
   id: string;
