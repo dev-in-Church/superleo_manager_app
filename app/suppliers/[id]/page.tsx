@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ManagerHeader } from "../../../components/manager-header";
 import {
   formatDate,
   isActive,
@@ -154,7 +153,6 @@ export default function SupplierProfilePage() {
   if (token === undefined || token === null || loading)
     return (
       <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-        <ManagerHeader active="suppliers" />
         <div className="grid place-items-center px-4 py-32 text-sm font-semibold">
           <span className="flex items-center gap-3">
             <span
@@ -170,7 +168,6 @@ export default function SupplierProfilePage() {
   if (error || !supplier)
     return (
       <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-        <ManagerHeader active="suppliers" />
         <div className="mx-auto max-w-md px-4 py-24 text-center">
           <h1 className="text-xl font-bold">{error || "Supplier not found"}</h1>
           <Link
@@ -196,7 +193,6 @@ export default function SupplierProfilePage() {
 
   return (
     <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-      <ManagerHeader active="suppliers" />
 
       <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10 md:px-12">
         <Link
@@ -245,6 +241,12 @@ export default function SupplierProfilePage() {
               className={`rounded-xl bg-[#0a6b48] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#085a3d] ${focusRing}`}
             >
               View records
+            </Link>
+            <Link
+              href={`/suppliers/${supplier.id}/payments`}
+              className={`rounded-xl border border-[#c8d8cb] px-4 py-2.5 text-sm font-bold transition hover:border-[#5a9960] ${focusRing}`}
+            >
+              Payments
             </Link>
             {!editing && (
               <button

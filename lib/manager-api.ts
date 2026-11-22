@@ -87,6 +87,18 @@ export function formatDate(value: string) {
         year: "numeric",
       });
 }
+export function formatDateTime(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? "—"
+    : parsed.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
 export const litres = (n: number | string) =>
   `${Math.round(Number(n) * 10) / 10} L`;
 export const money = (n: number | string) =>

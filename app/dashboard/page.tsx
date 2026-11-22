@@ -135,7 +135,6 @@ export default function DashboardPage() {
     text: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [pricePerLitre, setPricePerLitre] = useState<number | null>(null);
   const [priceInput, setPriceInput] = useState("");
   const [savingPrice, setSavingPrice] = useState(false);
@@ -329,112 +328,6 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-      <header className="sticky top-0 z-20 border-b border-[#dce6dd] bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 md:h-20 md:px-12">
-          <a
-            href="/dashboard"
-            aria-label="SuperLeo manager home"
-            className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48]"
-          >
-            {/* put logo.png in your app's /public folder */}
-            <img src="/logo.png" alt="SuperLeo" className="h-8 w-auto shrink-0 sm:h-10" />
-            <span className="hidden rounded-full bg-[#dceccd] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#285b38] sm:inline">
-              {user.role}
-            </span>
-          </a>
-
-          {/* Desktop navigation */}
-          <div className="hidden items-center gap-3 md:flex">
-            <nav aria-label="Main" className="flex items-center gap-1">
-              <a
-                href="/dashboard"
-                aria-current="page"
-                className={`${navLink} bg-[#dceccd] text-[#0a6b48]`}
-              >
-                Overview
-              </a>
-              <a
-                href="/suppliers"
-                className={`${navLink} text-[#64766b] hover:bg-[#eef5e8] hover:text-[#0a6b48]`}
-              >
-                Suppliers
-              </a>
-            </nav>
-            <button
-              type="button"
-              onClick={() => {
-                localStorage.removeItem("superleo_manager_token");
-                router.replace("/");
-              }}
-              className="rounded-full border border-[#c8d8cb] px-4 py-1.5 text-sm font-bold text-[#17372d] transition hover:bg-[#17372d] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48]"
-            >
-              Log out
-            </button>
-          </div>
-
-          {/* Mobile menu button */}
-          <button
-            type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Toggle menu"
-            aria-expanded={menuOpen}
-            aria-controls="manager-menu"
-            className="-mr-2 flex size-10 items-center justify-center rounded-xl text-[#17372d] transition hover:bg-[#eef5e8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0a6b48] md:hidden"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="size-6"
-              aria-hidden
-            >
-              {menuOpen ? (
-                <path d="M6 6l12 12M18 6L6 18" />
-              ) : (
-                <path d="M4 7h16M4 12h16M4 17h16" />
-              )}
-            </svg>
-          </button>
-        </div>
-
-        {/* Mobile menu panel */}
-        {menuOpen && (
-          <div
-            id="manager-menu"
-            className="border-t border-[#dce6dd] bg-white px-4 py-3 md:hidden"
-          >
-            <nav aria-label="Mobile" className="flex flex-col gap-1 text-sm font-bold">
-              <a
-                href="/dashboard"
-                aria-current="page"
-                onClick={() => setMenuOpen(false)}
-                className="rounded-xl bg-[#dceccd] px-3 py-3 text-[#0a6b48]"
-              >
-                Overview
-              </a>
-              <a
-                href="/suppliers"
-                className="rounded-xl px-3 py-3 text-[#17372d] hover:bg-[#f2f7f0]"
-              >
-                Suppliers
-              </a>
-              <button
-                type="button"
-                onClick={() => {
-                  localStorage.removeItem("superleo_manager_token");
-                  router.replace("/");
-                }}
-                className="rounded-xl px-3 py-3 text-left text-red-700 hover:bg-red-50"
-              >
-                Log out
-              </button>
-            </nav>
-          </div>
-        )}
-      </header>
-
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 md:px-12">
         {/* Page heading */}
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -501,8 +394,9 @@ export default function DashboardPage() {
         )}
 
         <form
+          id="pricing"
           onSubmit={savePrice}
-          className="mt-6 flex flex-col gap-4 rounded-2xl border border-[#cfe0d0] bg-white p-5 sm:flex-row sm:items-end sm:justify-between"
+          className="mt-6 scroll-mt-6 flex flex-col gap-4 rounded-2xl border border-[#cfe0d0] bg-white p-5 sm:flex-row sm:items-end sm:justify-between"
         >
           <div className="min-w-0">
             <p className={eyebrow}>Pricing</p>
@@ -540,7 +434,7 @@ export default function DashboardPage() {
           </div>
         </form>
 
-        <div className="mt-6 grid gap-5 sm:gap-6 xl:grid-cols-[1.05fr_.95fr]">
+        <div id="workspace" className="mt-6 grid scroll-mt-6 gap-5 sm:gap-6 xl:grid-cols-[1.05fr_.95fr]">
           {/* Record a collection */}
           <Card className="min-w-0 border-[#cfe0d0]">
             <div className="flex items-start justify-between gap-3">

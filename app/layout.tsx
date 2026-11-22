@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { RegisterServiceWorker } from "../components/pwa";
+import { ManagerShell } from "../components/manager-shell";
 
 export const metadata: Metadata = {
   title: "SuperLeo Manager",
@@ -28,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {children}
+        <ManagerShell>{children}</ManagerShell>
         <RegisterServiceWorker />
       </body>
     </html>

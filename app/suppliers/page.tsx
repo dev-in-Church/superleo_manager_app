@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ManagerHeader } from "../../components/manager-header";
 import {
   isActive,
   litres,
@@ -14,12 +13,7 @@ import {
 } from "../../lib/manager-api";
 
 type Status = "all" | "active" | "inactive";
-type Meta = {
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-};
+type Meta = { total: number; page: number; pageSize: number; totalPages: number };
 
 const PAGE_SIZE = 20;
 const SORTS = [
@@ -37,9 +31,7 @@ const field =
 function pageList(current: number, total: number): (number | "…")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const wanted = new Set([1, total, current - 1, current, current + 1]);
-  const pages = [...wanted]
-    .filter((p) => p >= 1 && p <= total)
-    .sort((a, b) => a - b);
+  const pages = [...wanted].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
   const out: (number | "…")[] = [];
   pages.forEach((p, i) => {
     if (i > 0 && p - pages[i - 1] > 1) out.push("…");
@@ -94,12 +86,7 @@ export default function SuppliersPage() {
   const [page, setPage] = useState(1);
 
   const [rows, setRows] = useState<SupplierRow[]>([]);
-  const [meta, setMeta] = useState<Meta>({
-    total: 0,
-    page: 1,
-    pageSize: PAGE_SIZE,
-    totalPages: 1,
-  });
+  const [meta, setMeta] = useState<Meta>({ total: 0, page: 1, pageSize: PAGE_SIZE, totalPages: 1 });
   const [addresses, setAddresses] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -141,8 +128,7 @@ export default function SuppliersPage() {
         setRows(response.data);
         setMeta(response.meta);
         // The page no longer exists (for example after a delete elsewhere)
-        if (response.meta.page > response.meta.totalPages)
-          setPage(response.meta.totalPages);
+        if (response.meta.page > response.meta.totalPages) setPage(response.meta.totalPages);
       })
       .catch((e) => {
         if (id !== latest.current) return;
@@ -153,9 +139,7 @@ export default function SuppliersPage() {
       });
   }, [token, search, address, status, sort, page, reloadKey]);
 
-  const filtersActive = Boolean(
-    searchInput || addressInput || status !== "all",
-  );
+  const filtersActive = Boolean(searchInput || addressInput || status !== "all");
   function clearFilters() {
     setSearchInput("");
     setAddressInput("");
@@ -175,7 +159,6 @@ export default function SuppliersPage() {
 
   return (
     <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-      <ManagerHeader active="suppliers" />
 
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 md:px-12">
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -332,11 +315,7 @@ export default function SuppliersPage() {
                 </th>
               </tr>
             </thead>
-            <tbody
-              className={
-                loading ? "opacity-60 transition-opacity" : "transition-opacity"
-              }
-            >
+            <tbody className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
               {rows.map((supplier) => (
                 <tr
                   key={supplier.id}
@@ -361,30 +340,19 @@ export default function SuppliersPage() {
                     </Link>
                   </td>
                   <td className="px-3 py-3.5">
-                    <p>
-                      {supplier.phone || (
-                        <span className="text-[#9aa89f]">No phone</span>
-                      )}
-                    </p>
-                    <p
-                      className="max-w-[200px] truncate text-xs text-[#71847a]"
-                      title={supplier.email}
-                    >
+                    <p>{supplier.phone || <span className="text-[#9aa89f]">No phone</span>}</p>
+                    <p className="max-w-[200px] truncate text-xs text-[#71847a]" title={supplier.email}>
                       {supplier.email}
                     </p>
                   </td>
                   <td className="max-w-[180px] px-3 py-3.5">
                     <p className="truncate" title={supplier.address || ""}>
-                      {supplier.address || (
-                        <span className="text-[#9aa89f]">Not added</span>
-                      )}
+                      {supplier.address || <span className="text-[#9aa89f]">Not added</span>}
                     </p>
                   </td>
                   <td className="px-3 py-3.5">
                     <p className="font-bold">{supplier.records_count}</p>
-                    <p className="text-xs text-[#71847a]">
-                      {litres(supplier.total_litres)}
-                    </p>
+                    <p className="text-xs text-[#71847a]">{litres(supplier.total_litres)}</p>
                   </td>
                   <td className="px-3 py-3.5">
                     <div className="flex flex-col items-start gap-1">
@@ -412,9 +380,7 @@ export default function SuppliersPage() {
           </table>
 
           {/* Mobile cards */}
-          <ul
-            className={`divide-y divide-[#edf2ed] md:hidden ${loading ? "opacity-60 transition-opacity" : "transition-opacity"}`}
-          >
+          <ul className={`divide-y divide-[#edf2ed] md:hidden ${loading ? "opacity-60 transition-opacity" : "transition-opacity"}`}>
             {rows.map((supplier) => (
               <li key={supplier.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -480,10 +446,7 @@ export default function SuppliersPage() {
           {loading && !rows.length && (
             <div aria-hidden className="divide-y divide-[#edf2ed]">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex animate-pulse items-center gap-3 p-4 md:px-5"
-                >
+                <div key={i} className="flex animate-pulse items-center gap-3 p-4 md:px-5">
                   <div className="size-10 rounded-full bg-[#eef2ec]" />
                   <div className="flex-1 space-y-2">
                     <div className="h-3 w-40 rounded bg-[#eef2ec]" />
@@ -520,11 +483,8 @@ export default function SuppliersPage() {
         {meta.total > 0 && (
           <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
             <p className="text-sm text-[#71847a]">
-              Showing{" "}
-              <strong className="text-[#17372d]">
-                {first}–{last}
-              </strong>{" "}
-              of <strong className="text-[#17372d]">{meta.total}</strong>
+              Showing <strong className="text-[#17372d]">{first}–{last}</strong> of{" "}
+              <strong className="text-[#17372d]">{meta.total}</strong>
             </p>
             {meta.totalPages > 1 && (
               <nav aria-label="Pagination" className="flex items-center gap-1">

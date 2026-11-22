@@ -11,7 +11,7 @@ const navLink = `rounded-full px-3 py-1.5 text-sm font-bold transition ${focusRi
 export function ManagerHeader({
   active,
 }: {
-  active: "overview" | "suppliers";
+  active: "overview" | "suppliers" | "payments";
 }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -24,6 +24,7 @@ export function ManagerHeader({
   const links = [
     { id: "overview", href: "/dashboard", label: "Overview" },
     { id: "suppliers", href: "/suppliers", label: "Suppliers" },
+    { id: "payments", href: "/payments", label: "Payments" },
   ] as const;
 
   return (
@@ -35,11 +36,7 @@ export function ManagerHeader({
           className={`flex min-w-0 items-center rounded-lg ${focusRing}`}
         >
           {/* logo.png lives in your app's /public folder */}
-          <img
-            src="/logo.png"
-            alt="SuperLeo"
-            className="h-8 w-auto shrink-0 sm:h-10"
-          />
+          <img src="/logo.png" alt="SuperLeo" className="h-8 w-auto shrink-0 sm:h-10" />
         </a>
 
         <div className="hidden items-center gap-3 md:flex">
@@ -99,10 +96,7 @@ export function ManagerHeader({
           id="manager-menu"
           className="border-t border-[#dce6dd] bg-white px-4 py-3 md:hidden"
         >
-          <nav
-            aria-label="Mobile"
-            className="flex flex-col gap-1 text-sm font-bold"
-          >
+          <nav aria-label="Mobile" className="flex flex-col gap-1 text-sm font-bold">
             {links.map((link) => (
               <a
                 key={link.id}

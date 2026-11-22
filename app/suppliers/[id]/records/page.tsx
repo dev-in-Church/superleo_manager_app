@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ManagerHeader } from "../../../../components/manager-header";
 import {
   formatDate,
   litres,
@@ -29,9 +28,7 @@ export default function SupplierRecordsPage() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
-    null,
-  );
+  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [session, setSession] = useState<Session>("all");
   const [page, setPage] = useState(1);
 
@@ -50,9 +47,7 @@ export default function SupplierRecordsPage() {
         setSupplier(s.data);
         setDeliveries(d.data);
       })
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "Could not load records"),
-      )
+      .catch((e) => setError(e instanceof Error ? e.message : "Could not load records"))
       .finally(() => setLoading(false));
   }, [token, id]);
 
@@ -60,39 +55,23 @@ export default function SupplierRecordsPage() {
 
   // Newest first, then filtered and paged here in the browser
   const sorted = useMemo(
-    () =>
-      [...deliveries].sort((a, b) =>
-        String(b.session_date).localeCompare(String(a.session_date)),
-      ),
+    () => [...deliveries].sort((a, b) => String(b.session_date).localeCompare(String(a.session_date))),
     [deliveries],
   );
   const filtered = useMemo(
-    () =>
-      sorted.filter(
-        (d) =>
-          session === "all" || String(d.session_type).toLowerCase() === session,
-      ),
+    () => sorted.filter((d) => session === "all" || String(d.session_type).toLowerCase() === session),
     [sorted, session],
   );
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const visible = filtered.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
-  const totalLitres = deliveries.reduce(
-    (sum, d) => sum + Number(d.quantity_litres),
-    0,
-  );
+  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const totalLitres = deliveries.reduce((sum, d) => sum + Number(d.quantity_litres), 0);
   const first = filtered.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
   const last = Math.min(filtered.length, currentPage * PAGE_SIZE);
 
   async function editDelivery(delivery: Delivery) {
     if (!token) return;
-    const quantity = prompt(
-      "Quantity in litres",
-      String(delivery.quantity_litres),
-    );
+    const quantity = prompt("Quantity in litres", String(delivery.quantity_litres));
     if (quantity === null || quantity.trim() === "") return;
     const value = Number(quantity);
     if (!Number.isFinite(value) || value <= 0) {
@@ -111,10 +90,7 @@ export default function SupplierRecordsPage() {
       );
       notify("Milk record updated.");
     } catch (e) {
-      notify(
-        e instanceof Error ? e.message : "Could not update the record",
-        true,
-      );
+      notify(e instanceof Error ? e.message : "Could not update the record", true);
     }
   }
 
@@ -125,17 +101,13 @@ export default function SupplierRecordsPage() {
       setDeliveries((items) => items.filter((item) => item.id !== delivery.id));
       notify("Milk record deleted.");
     } catch (e) {
-      notify(
-        e instanceof Error ? e.message : "Could not delete the record",
-        true,
-      );
+      notify(e instanceof Error ? e.message : "Could not delete the record", true);
     }
   }
 
   if (token === undefined || token === null || loading)
     return (
       <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-        <ManagerHeader active="suppliers" />
         <div className="grid place-items-center px-4 py-32 text-sm font-semibold">
           <span className="flex items-center gap-3">
             <span
@@ -151,7 +123,6 @@ export default function SupplierRecordsPage() {
   if (error || !supplier)
     return (
       <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-        <ManagerHeader active="suppliers" />
         <div className="mx-auto max-w-md px-4 py-24 text-center">
           <h1 className="text-xl font-bold">{error || "Supplier not found"}</h1>
           <Link
@@ -166,26 +137,14 @@ export default function SupplierRecordsPage() {
 
   return (
     <main className="min-h-screen bg-[#f4f7f2] text-[#17372d]">
-      <ManagerHeader active="suppliers" />
 
       <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10 md:px-12">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex flex-wrap items-center gap-1.5 text-sm font-bold text-[#0a6b48]"
-        >
-          <Link
-            href="/suppliers"
-            className={`rounded-lg hover:underline ${focusRing}`}
-          >
+        <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm font-bold text-[#0a6b48]">
+          <Link href="/suppliers" className={`rounded-lg hover:underline ${focusRing}`}>
             All suppliers
           </Link>
-          <span aria-hidden className="text-[#9aa89f]">
-            /
-          </span>
-          <Link
-            href={`/suppliers/${supplier.id}`}
-            className={`rounded-lg hover:underline ${focusRing}`}
-          >
+          <span aria-hidden className="text-[#9aa89f]">/</span>
+          <Link href={`/suppliers/${supplier.id}`} className={`rounded-lg hover:underline ${focusRing}`}>
             {supplier.full_name}
           </Link>
         </nav>
@@ -196,9 +155,7 @@ export default function SupplierRecordsPage() {
             <h1 className="mt-2 truncate text-2xl font-bold tracking-tight sm:text-3xl">
               {supplier.full_name}
             </h1>
-            <p className="mt-1 text-sm font-semibold text-[#5a9960]">
-              {supplier.supplier_code}
-            </p>
+            <p className="mt-1 text-sm font-semibold text-[#5a9960]">{supplier.supplier_code}</p>
           </div>
           <Link
             href={`/suppliers/${supplier.id}`}
@@ -210,25 +167,15 @@ export default function SupplierRecordsPage() {
 
         <dl className="mt-5 grid grid-cols-3 gap-3 sm:gap-4">
           <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-3 sm:p-4">
-            <dt className="truncate text-[11px] text-[#809087] sm:text-xs">
-              Records
-            </dt>
-            <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">
-              {deliveries.length}
-            </dd>
+            <dt className="truncate text-[11px] text-[#809087] sm:text-xs">Records</dt>
+            <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">{deliveries.length}</dd>
           </div>
           <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-3 sm:p-4">
-            <dt className="truncate text-[11px] text-[#809087] sm:text-xs">
-              Total supplied
-            </dt>
-            <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">
-              {litres(totalLitres)}
-            </dd>
+            <dt className="truncate text-[11px] text-[#809087] sm:text-xs">Total supplied</dt>
+            <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">{litres(totalLitres)}</dd>
           </div>
           <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-3 sm:p-4">
-            <dt className="truncate text-[11px] text-[#809087] sm:text-xs">
-              Latest
-            </dt>
+            <dt className="truncate text-[11px] text-[#809087] sm:text-xs">Latest</dt>
             <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">
               {sorted[0] ? formatDate(sorted[0].session_date) : "—"}
             </dd>
@@ -251,11 +198,7 @@ export default function SupplierRecordsPage() {
         <div className="mt-4 rounded-2xl border border-[#dce6dd] bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
             <h2 className="text-lg font-bold">All records</h2>
-            <div
-              role="group"
-              aria-label="Filter by session"
-              className="inline-flex rounded-xl bg-[#eef5e8] p-1"
-            >
+            <div role="group" aria-label="Filter by session" className="inline-flex rounded-xl bg-[#eef5e8] p-1">
               {(["all", "morning", "evening"] as Session[]).map((option) => (
                 <button
                   key={option}
@@ -285,9 +228,7 @@ export default function SupplierRecordsPage() {
                     <th className="px-4 py-3 font-bold sm:px-5">Date</th>
                     <th className="px-2 py-3 font-bold">Session</th>
                     <th className="px-2 py-3 font-bold">Quantity</th>
-                    <th className="px-4 py-3 text-right font-bold sm:px-5">
-                      Actions
-                    </th>
+                    <th className="px-4 py-3 text-right font-bold sm:px-5">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,8 +243,7 @@ export default function SupplierRecordsPage() {
                       <td className="px-2 py-3">
                         <span
                           className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${
-                            String(delivery.session_type).toLowerCase() ===
-                            "evening"
+                            String(delivery.session_type).toLowerCase() === "evening"
                               ? "bg-[#f4eee2] text-[#9a7440]"
                               : "bg-[#eef6eb] text-[#3e7c48]"
                           }`}
@@ -346,11 +286,8 @@ export default function SupplierRecordsPage() {
           {filtered.length > 0 && (
             <div className="flex flex-col items-center justify-between gap-3 border-t border-[#edf2ed] p-4 sm:flex-row sm:px-5">
               <p className="text-sm text-[#71847a]">
-                Showing{" "}
-                <strong className="text-[#17372d]">
-                  {first}–{last}
-                </strong>{" "}
-                of <strong className="text-[#17372d]">{filtered.length}</strong>
+                Showing <strong className="text-[#17372d]">{first}–{last}</strong> of{" "}
+                <strong className="text-[#17372d]">{filtered.length}</strong>
               </p>
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
