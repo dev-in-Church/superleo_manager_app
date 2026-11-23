@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input } from "../../components/ui";
+import { TOKEN_KEY, money, request } from "../../lib/manager-api";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 type User = { full_name?: string; email: string; role: "manager" | "admin" };
 type Supplier = {
   id: string;
@@ -12,39 +13,7 @@ type Supplier = {
   full_name: string;
   email: string;
 };
-type Report = {
-  from: string;
-  to: string;
-  totalLitres: number;
-  pricePerLitre: number | null;
-  totalCost: number;
-  deliveryCount: number;
-  supplier: { name: string; code: string; email: string } | null;
-  deliveries: Array<{
-    id: string;
-    session_date: string;
-    session_type: string;
-    full_name: string;
-    quantity_litres: number;
-  }>;
-};
-async function request<T>(
-  path: string,
-  token: string,
-  options?: RequestInit,
-): Promise<T> {
-  const response = await fetch(`${API}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(options?.headers || {}),
-    },
-  });
-  if (!response.ok)
-    throw new Error((await response.json()).error || "Request failed");
-  return response.json();
-}
+
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -54,8 +23,8 @@ const today = () => {
 const eyebrow = "text-xs font-bold uppercase tracking-[.15em] text-[#5a9960]";
 const selectClass =
   "mt-2 w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20";
-const navLink =
-  "rounded-full px-3 py-1.5 text-sm font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48]";
+const focusRing =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48]";
 
 function CheckIcon() {
   return (
@@ -80,52 +49,10 @@ function AlertIcon() {
   );
 }
 
-function EyeIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4 shrink-0"
-      aria-hidden
-    >
-      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-function MailIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4 shrink-0"
-      aria-hidden
-    >
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="m3 7 9 6 9-6" />
-    </svg>
-  );
-}
-
-const reportBtn =
-  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition active:scale-[.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dceccd]";
-
 export default function DashboardPage() {
   const router = useRouter();
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [report, setReport] = useState<Report | null>(null);
-  const [from, setFrom] = useState(today());
-  const [to, setTo] = useState(today());
   const [date, setDate] = useState(today());
   const [selectedSupplier, setSelectedSupplier] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -138,10 +65,10 @@ export default function DashboardPage() {
   const [pricePerLitre, setPricePerLitre] = useState<number | null>(null);
   const [priceInput, setPriceInput] = useState("");
   const [savingPrice, setSavingPrice] = useState(false);
-  const previewRef = useRef<HTMLElement>(null);
+  const [totalOwed, setTotalOwed] = useState<number | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("superleo_manager_token");
+    const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return router.replace("/");
     request<{ data: User }>("/auth/me", token)
       .then(({ data }) => {
@@ -152,14 +79,15 @@ export default function DashboardPage() {
       })
       .then(({ data }) => setSuppliers(data))
       .catch(() => {
-        localStorage.removeItem("superleo_manager_token");
+        localStorage.removeItem(TOKEN_KEY);
         router.replace("/");
       })
       .finally(() => setLoading(false));
   }, [router]);
 
+  // Default price, and what is currently owed to suppliers
   useEffect(() => {
-    const token = localStorage.getItem("superleo_manager_token");
+    const token = localStorage.getItem(TOKEN_KEY);
     if (!token || !user) return;
     request<{ data: { pricePerLitre: number } }>("/admin/settings/price", token)
       .then(({ data }) => {
@@ -167,17 +95,17 @@ export default function DashboardPage() {
         setPriceInput(String(data.pricePerLitre));
       })
       .catch(() => {});
+    request<{ totals: { totalOwed: number } }>(
+      "/payments/balances?pageSize=1&owedOnly=1",
+      token,
+    )
+      .then((response) => setTotalOwed(response.totals.totalOwed))
+      .catch(() => {}); // payments not set up yet: the tile just shows a dash
   }, [user]);
-
-  // Presentation only: bring the preview into view once it is ready
-  useEffect(() => {
-    if (pdfUrl)
-      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [pdfUrl]);
 
   async function recordMilk(event: FormEvent) {
     event.preventDefault();
-    const token = localStorage.getItem("superleo_manager_token");
+    const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return;
     try {
       await request("/deliveries", token, {
@@ -195,7 +123,6 @@ export default function DashboardPage() {
         text: `Saved ${quantity} L for ${farmer?.full_name || "supplier"} · ${sessionType} collection on ${new Date(`${date}T00:00:00`).toLocaleDateString("en-GB")}.`,
       });
       setQuantity("");
-      await generateReport();
     } catch (error) {
       setNotice({
         type: "error",
@@ -203,87 +130,10 @@ export default function DashboardPage() {
       });
     }
   }
-  async function generateReport() {
-    const token = localStorage.getItem("superleo_manager_token");
-    if (!token || !selectedSupplier) {
-      setNotice({
-        type: "error",
-        text: "Choose a supplier before generating a report.",
-      });
-      return;
-    }
-    try {
-      const response = await request<{ data: Report }>(
-        `/reports?from=${from}&to=${to}&supplierProfileId=${selectedSupplier}`,
-        token,
-      );
-      setReport(response.data);
-      setNotice({
-        type: "success",
-        text: "Supplier report generated and ready to download.",
-      });
-    } catch (error) {
-      setNotice({
-        type: "error",
-        text:
-          error instanceof Error ? error.message : "Could not generate report",
-      });
-    }
-  }
-  async function emailReport() {
-    const token = localStorage.getItem("superleo_manager_token");
-    const supplier = suppliers.find((item) => item.id === selectedSupplier);
-    if (!token || !supplier || !report) return;
-    try {
-      await request("/reports/email", token, {
-        method: "POST",
-        body: JSON.stringify({
-          from: report.from,
-          to: report.to,
-          supplierEmail: supplier.email,
-          supplierProfileId: supplier.id,
-        }),
-      });
-      setNotice({ type: "success", text: `Report sent to ${supplier.email}.` });
-    } catch (error) {
-      setNotice({
-        type: "error",
-        text:
-          error instanceof Error ? error.message : "Email could not be sent",
-      });
-    }
-  }
-  async function previewPdf() {
-    const token = localStorage.getItem("superleo_manager_token");
-    if (!token || !selectedSupplier) return;
-    const response = await fetch(
-      `${API}/reports/pdf?from=${from}&to=${to}&supplierProfileId=${selectedSupplier}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!response.ok) {
-      setNotice({ type: "error", text: "Could not prepare PDF preview." });
-      return;
-    }
-    const blob = await response.blob();
-    if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-    setPdfUrl(URL.createObjectURL(blob));
-    setNotice({
-      type: "success",
-      text: "Report preview ready. Review it before downloading or sharing.",
-    });
-  }
-  function downloadPdf() {
-    if (!pdfUrl) return;
-    const link = document.createElement("a");
-    link.href = pdfUrl;
-    link.download = `superleo-report-${from}-${to}.pdf`;
-    link.click();
-    setNotice({ type: "success", text: "PDF downloaded successfully." });
-  }
 
   async function savePrice(event: FormEvent) {
     event.preventDefault();
-    const token = localStorage.getItem("superleo_manager_token");
+    const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return;
     const value = Number(priceInput);
     if (priceInput.trim() === "" || !Number.isFinite(value) || value < 0) {
@@ -336,47 +186,48 @@ export default function DashboardPage() {
             <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
               Overview
             </h1>
-            {/* <h1 className="mt-3 text-4xl font-bold tracking-tight md:text-6xl">
-              Good morning, {user.full_name || user.email}
-            </h1> */}
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#71847a] sm:text-base">
-              Record collections, keep farmer profiles current, and create
-              polished supplier reports.
+              Record collections and keep the default price up to date.
+              Supplier reports and payments have their own pages.
             </p>
           </div>
-          <a
+          <Link
             href="/suppliers"
-            className="rounded-xl bg-[#dceccd] px-4 py-3 text-sm font-bold text-[#285b38] transition hover:bg-[#cfe3bd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48]"
+            className={`rounded-xl bg-[#dceccd] px-4 py-3 text-sm font-bold text-[#285b38] transition hover:bg-[#cfe3bd] ${focusRing}`}
           >
             Manage {suppliers.length} farmers
-          </a>
+          </Link>
         </div>
 
-        {/* Quick stats (derived from data already on the page) */}
+        {/* Quick stats */}
         <dl className="mt-6 grid grid-cols-3 gap-3 sm:gap-4">
-          {[
-            { label: "Registered farmers", value: String(suppliers.length) },
-            {
-              label: "Records in report",
-              value: report ? String(report.deliveryCount) : "—",
-            },
-            {
-              label: "Litres in report",
-              value: report ? `${report.totalLitres.toFixed(2)} L` : "—",
-            },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-3 sm:p-4"
-            >
-              <dt className="truncate text-[11px] font-semibold text-[#809087] sm:text-xs">
-                {stat.label}
-              </dt>
-              <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">
-                {stat.value}
-              </dd>
-            </div>
-          ))}
+          <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-3 sm:p-4">
+            <dt className="truncate text-[11px] font-semibold text-[#809087] sm:text-xs">
+              Registered farmers
+            </dt>
+            <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">
+              {suppliers.length}
+            </dd>
+          </div>
+          <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-3 sm:p-4">
+            <dt className="truncate text-[11px] font-semibold text-[#809087] sm:text-xs">
+              Default price per litre
+            </dt>
+            <dd className="mt-1 truncate text-lg font-bold sm:text-2xl">
+              {pricePerLitre === null ? "—" : money(pricePerLitre)}
+            </dd>
+          </div>
+          <Link
+            href="/payments"
+            className={`min-w-0 rounded-2xl bg-[#17372d] p-3 text-white transition hover:bg-[#1f4a3b] sm:p-4 ${focusRing}`}
+          >
+            <span className="block truncate text-[11px] font-semibold text-[#b7cabd] sm:text-xs">
+              Owed to suppliers
+            </span>
+            <span className="mt-1 block truncate text-lg font-bold sm:text-2xl">
+              {totalOwed === null ? "—" : money(totalOwed)}
+            </span>
+          </Link>
         </dl>
 
         {notice && (
@@ -393,48 +244,10 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <form
-          id="pricing"
-          onSubmit={savePrice}
-          className="mt-6 scroll-mt-6 flex flex-col gap-4 rounded-2xl border border-[#cfe0d0] bg-white p-5 sm:flex-row sm:items-end sm:justify-between"
+        <div
+          id="workspace"
+          className="mt-6 grid scroll-mt-6 items-start gap-5 sm:gap-6 xl:grid-cols-[1.4fr_.6fr]"
         >
-          <div className="min-w-0">
-            <p className={eyebrow}>Pricing</p>
-            <h2 className="mt-2 text-xl font-bold">Default price per litre</h2>
-            <p className="mt-1 text-sm leading-6 text-[#71847a]">
-              Applies to every supplier unless you set a custom price on their profile.{" "}
-              {pricePerLitre === null
-                ? ""
-                : pricePerLitre > 0
-                  ? `Default price: KSh ${pricePerLitre.toFixed(2)} per litre.`
-                  : "No price has been set yet."}
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
-            <label className="text-sm font-semibold">
-              <span className="block">Price (KSh)</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={priceInput}
-                onChange={(event) => setPriceInput(event.target.value)}
-                placeholder="e.g. 65"
-                className="mt-2 w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20 sm:w-40"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={savingPrice}
-              className="rounded-xl bg-[#0a6b48] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#085a3d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a6b48] disabled:opacity-60"
-            >
-              {savingPrice ? "Saving..." : "Save price"}
-            </button>
-          </div>
-        </form>
-
-        <div id="workspace" className="mt-6 grid scroll-mt-6 gap-5 sm:gap-6 xl:grid-cols-[1.05fr_.95fr]">
           {/* Record a collection */}
           <Card className="min-w-0 border-[#cfe0d0]">
             <div className="flex items-start justify-between gap-3">
@@ -506,126 +319,58 @@ export default function DashboardPage() {
             </form>
           </Card>
 
-          {/* Report studio */}
-          <Card className="min-w-0 bg-[#17372d] text-white">
-            <p className="text-xs font-bold uppercase tracking-[.15em] text-[#b7cabd]">
-              Supplier report studio
-            </p>
-            <h2 className="mt-2 text-xl font-bold sm:text-2xl">
-              Generate a clean report
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-[#b7cabd]">
-              Reports are scoped to one supplier and include their name and code
-              once in the header.
-            </p>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-semibold text-[#dceccd]">
-                From
-                <Input
-                  type="date"
-                  value={from}
-                  onChange={(event) => setFrom(event.target.value)}
+          <div className="flex min-w-0 flex-col gap-5 sm:gap-6">
+            {/* Default price */}
+            <form
+              id="pricing"
+              onSubmit={savePrice}
+              className="scroll-mt-6 rounded-2xl border border-[#cfe0d0] bg-white p-5"
+            >
+              <p className={eyebrow}>Pricing</p>
+              <h2 className="mt-2 text-xl font-bold">Default price per litre</h2>
+              <p className="mt-1 text-sm leading-6 text-[#71847a]">
+                Applies to every supplier unless you set a custom price on their
+                profile.
+              </p>
+              <label className="mt-4 block text-sm font-semibold">
+                Price (KSh)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={priceInput}
+                  onChange={(event) => setPriceInput(event.target.value)}
+                  placeholder="e.g. 65"
+                  className="mt-2 w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20"
                 />
               </label>
-              <label className="text-sm font-semibold text-[#dceccd]">
-                To
-                <Input
-                  type="date"
-                  value={to}
-                  onChange={(event) => setTo(event.target.value)}
-                />
-              </label>
-            </div>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <Button type="button" onClick={generateReport}>
-                Generate report
-              </Button>
-              {report && (
-                <>
-                  <button
-                    type="button"
-                    onClick={previewPdf}
-                    className={`${reportBtn} border border-white/20 bg-[#0a6b48] text-white hover:bg-[#0c7f56]`}
-                  >
-                    <EyeIcon />
-                    Preview PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={emailReport}
-                    className={`${reportBtn} bg-[#dceccd] text-[#17372d] ring-1 ring-inset ring-[#17372d]/15 hover:bg-white`}
-                  >
-                    <MailIcon />
-                    Email supplier
-                  </button>
-                </>
-              )}
-            </div>
-            {report && (
-              <div className="mt-6 rounded-2xl bg-white/10 p-4">
-                <p className="truncate font-bold">
-                  {report.supplier?.name || "No records yet"}
-                </p>
-                <p className="mt-0.5 text-xs text-[#b7cabd]">
-                  {report.supplier?.code || ""}
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-3 border-t border-white/10 pt-3">
-                  <div>
-                    <p className="text-xs text-[#b7cabd]">Records</p>
-                    <p className="text-lg font-bold">{report.deliveryCount}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-[#b7cabd]">Total</p>
-                    <p className="text-lg font-bold">
-                      {report.totalLitres.toFixed(2)} L
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-end justify-between gap-3 border-t border-white/10 pt-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-[#b7cabd]">Total cost</p>
-                    <p className="truncate text-lg font-bold">
-                      KSh{" "}
-                      {report.totalCost.toLocaleString("en-KE", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-xs text-[#b7cabd]">
-                    {report.pricePerLitre === null
-                      ? "Rates vary"
-                      : report.pricePerLitre > 0
-                        ? `@ KSh ${report.pricePerLitre.toFixed(2)} / L`
-                        : "Price not set"}
-                  </p>
-                </div>
-              </div>
-            )}
-          </Card>
-        </div>
+              <button
+                type="submit"
+                disabled={savingPrice}
+                className={`mt-3 w-full rounded-xl bg-[#0a6b48] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#085a3d] disabled:opacity-60 ${focusRing}`}
+              >
+                {savingPrice ? "Saving..." : "Save price"}
+              </button>
+            </form>
 
-        {/* PDF preview */}
-        {pdfUrl && (
-          <section ref={previewRef} className="mt-6 scroll-mt-24 sm:mt-8">
-            <Card className="border-[#cfe0d0]">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className={eyebrow}>Document preview</p>
-                  <h2 className="mt-1 text-xl font-bold">
-                    Review supplier PDF
-                  </h2>
-                </div>
-                <Button onClick={downloadPdf}>Download PDF</Button>
-              </div>
-              <iframe
-                title="Supplier report PDF preview"
-                src={pdfUrl}
-                className="mt-5 h-[70svh] min-h-[420px] w-full rounded-2xl border border-[#dce6dd] bg-[#f4f7f2]"
-              />
-            </Card>
-          </section>
-        )}
+            {/* Reports moved to their own page */}
+            <div className="rounded-2xl border border-[#dce6dd] bg-white p-5">
+              <p className={eyebrow}>Reports</p>
+              <h2 className="mt-2 text-xl font-bold">Supplier reports</h2>
+              <p className="mt-1 text-sm leading-6 text-[#71847a]">
+                Generate, preview, download or email a supplier&apos;s report for
+                any period.
+              </p>
+              <Link
+                href="/reports"
+                className={`mt-4 block rounded-xl border border-[#c8d8cb] px-5 py-3 text-center text-sm font-bold transition hover:border-[#5a9960] ${focusRing}`}
+              >
+                Open reports
+              </Link>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
   );
