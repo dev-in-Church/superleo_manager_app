@@ -34,6 +34,15 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
     </>
   ),
+  reports: (
+    <>
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <path d="M14 2v6h6" />
+      <path d="M16 13H8" />
+      <path d="M16 17H8" />
+      <path d="M10 9H8" />
+    </>
+  ),
   record: (
     <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" />
   ),
@@ -96,11 +105,12 @@ const MAIN_NAV = [
     match: (p: string) => p.startsWith("/suppliers") && !isPaymentsRoute(p),
   },
   { href: "/payments", label: "Payments", icon: "payments", match: isPaymentsRoute },
+  { href: "/reports", label: "Reports", icon: "reports", match: (p: string) => p.startsWith("/reports") },
 ];
 
 // Jump straight to a section of the overview page
 const SHORTCUTS = [
-  { href: "/dashboard#workspace", label: "Record & reports", icon: "record" },
+  { href: "/dashboard#workspace", label: "Record milk", icon: "record" },
   { href: "/dashboard#pricing", label: "Default price", icon: "price" },
 ];
 

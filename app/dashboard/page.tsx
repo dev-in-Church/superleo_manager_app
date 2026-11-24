@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input } from "../../components/ui";
+import { SupplierSelect } from "../../components/supplier-select";
 import { TOKEN_KEY, money, request } from "../../lib/manager-api";
 
 type User = { full_name?: string; email: string; role: "manager" | "admin" };
@@ -265,22 +266,18 @@ export default function DashboardPage() {
               onSubmit={recordMilk}
               className="mt-6 grid gap-4 md:grid-cols-2"
             >
-              <label className="text-sm font-semibold md:col-span-2">
-                Farmer
-                <select
-                  value={selectedSupplier}
-                  onChange={(event) => setSelectedSupplier(event.target.value)}
-                  required
-                  className={selectClass}
-                >
-                  <option value="">Choose a supplier</option>
-                  {suppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.full_name} · {supplier.supplier_code}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="text-sm font-semibold md:col-span-2">
+                <span className="block">Farmer</span>
+                <div className="mt-2">
+                  <SupplierSelect
+                    options={suppliers}
+                    value={selectedSupplier}
+                    onChange={setSelectedSupplier}
+                    label="Farmer"
+                    required
+                  />
+                </div>
+              </div>
               <label className="text-sm font-semibold">
                 Collection date
                 <Input

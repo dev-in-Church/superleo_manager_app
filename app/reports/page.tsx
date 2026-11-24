@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SupplierSelect } from "../../components/supplier-select";
 import {
   API,
   formatDate,
@@ -78,9 +79,12 @@ export default function ReportsPage() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(true);
-  const [supplierFilter, setSupplierFilter] = useState("");
   const [supplierId, setSupplierId] = useState("");
-  const [from, setFrom] = useState(() => ymd(new Date()));
+  // Reports are usually for a month, so start there
+  const [from, setFrom] = useState(() => {
+    const now = new Date();
+    return ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+  });
   const [to, setTo] = useState(() => ymd(new Date()));
 
   const [report, setReport] = useState<Report | null>(null);
@@ -103,6 +107,12 @@ export default function ReportsPage() {
       .finally(() => setLoadingSuppliers(false));
   }, [token]);
 
+  useEffect(() => {
+    if (!suppliers.length) return;
+    const wanted = new URLSearchParams(window.location.search).get("supplier");
+    if (wanted && suppliers.some((s) => s.id === wanted)) setSupplierId((current) => current || wanted);
+  }, [suppliers]);
+
   // Free the PDF from memory when it is replaced or the page closes
   useEffect(() => {
     return () => {
@@ -111,16 +121,6 @@ export default function ReportsPage() {
   }, [pdfUrl]);
 
   const selected = suppliers.find((s) => s.id === supplierId);
-  const visibleSuppliers = useMemo(() => {
-    const q = supplierFilter.trim().toLowerCase();
-    if (!q) return suppliers;
-    return suppliers.filter(
-      (s) =>
-        s.id === supplierId ||
-        s.full_name.toLowerCase().includes(q) ||
-        s.supplier_code.toLowerCase().includes(q),
-    );
-  }, [suppliers, supplierFilter, supplierId]);
 
   // Changing the supplier or the dates makes the old report and PDF out of date
   function clearOutput() {
@@ -252,36 +252,17 @@ export default function ReportsPage() {
         <div className={`${card} mt-6`}>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
-              <label htmlFor="supplier-filter" className="text-sm font-bold">
-                Supplier
-              </label>
-              <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1.4fr]">
-                <input
-                  id="supplier-filter"
-                  type="search"
-                  value={supplierFilter}
-                  onChange={(e) => setSupplierFilter(e.target.value)}
-                  placeholder="Find by name or code"
-                  className="w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-2.5 text-sm outline-none transition placeholder:text-[#9aa89f] focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20"
-                />
-                <select
-                  aria-label="Choose a supplier"
+              <span className="text-sm font-bold">Supplier</span>
+              <div className="mt-2">
+                <SupplierSelect
+                  options={suppliers}
                   value={supplierId}
-                  onChange={(e) => {
-                    setSupplierId(e.target.value);
+                  loading={loadingSuppliers}
+                  onChange={(id) => {
+                    setSupplierId(id);
                     clearOutput();
                   }}
-                  disabled={loadingSuppliers}
-                  className="w-full rounded-xl border border-[#dce6dd] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20"
-                >
-                  <option value="">{loadingSuppliers ? "Loading suppliers..." : "Choose a supplier"}</option>
-                  {visibleSuppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.full_name} · {s.supplier_code}
-                      {s.is_active === false ? " (inactive)" : ""}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
 

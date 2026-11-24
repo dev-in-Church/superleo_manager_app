@@ -248,6 +248,12 @@ export default function SupplierProfilePage() {
             >
               Payments
             </Link>
+            <Link
+              href={`/reports?supplier=${supplier.id}`}
+              className={`rounded-xl border border-[#c8d8cb] px-4 py-2.5 text-sm font-bold transition hover:border-[#5a9960] ${focusRing}`}
+            >
+              Generate report
+            </Link>
             {!editing && (
               <button
                 type="button"
